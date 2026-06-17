@@ -13,6 +13,8 @@ pub mod error;
 pub mod geometry;
 pub mod traits;
 
-pub use error::{PixelensError, PixelensResult};
+pub use error::{CaptureError, CaptureResult, PixelensError, PixelensResult};
 pub use geometry::{Point, Rect, Size};
-pub use traits::{CaptureImage, CaptureProvider, CaptureRequest, CaptureResult, OcrEngine, OcrError};
+pub use traits::{
+    CaptureImage, CaptureProvider, CaptureRequest, OcrEngine, OcrError, RawCapture,
+};

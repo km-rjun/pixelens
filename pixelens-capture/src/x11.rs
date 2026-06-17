@@ -4,7 +4,7 @@
 //! a custom cursor handles region selection, and `xcb_get_image` captures
 //! the selected region.
 
-use pixelens_core::{CaptureProvider, CaptureRequest, CaptureResult, PixelensError};
+use pixelens_core::{CaptureProvider, CaptureRequest, PixelensError, RawCapture};
 
 pub struct X11CaptureProvider {
     _private: (),
@@ -17,7 +17,7 @@ impl X11CaptureProvider {
 }
 
 impl CaptureProvider for X11CaptureProvider {
-    fn capture(&self, _request: &CaptureRequest) -> Result<CaptureResult, PixelensError> {
+    fn capture(&self, _request: &CaptureRequest) -> Result<RawCapture, PixelensError> {
         Err(PixelensError::NotImplemented("X11CaptureProvider (M4)"))
     }
 

@@ -34,7 +34,7 @@ impl CaptureImage {
 /// The region is a generic bounding box, not a rectangle, so the
 /// `CaptureProvider` trait does not assume v1's rectangle-only selection.
 #[derive(Debug, Clone)]
-pub struct CaptureResult {
+pub struct RawCapture {
     pub region: Rect,
     pub image: CaptureImage,
 }
@@ -52,7 +52,7 @@ pub struct CaptureRequest {
 /// The daemon selects one at startup based on the display server detector (M2).
 pub trait CaptureProvider: Send + Sync {
     /// Run an interactive capture (overlay appears, user selects, returns).
-    fn capture(&self, request: &CaptureRequest) -> Result<CaptureResult, PixelensError>;
+    fn capture(&self, request: &CaptureRequest) -> Result<RawCapture, PixelensError>;
 
     /// Cancel an in-flight session; the overlay must vanish cleanly with
     /// no on-screen artefacts.

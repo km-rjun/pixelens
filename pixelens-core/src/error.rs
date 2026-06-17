@@ -15,7 +15,7 @@ pub enum PixelensError {
     UnsupportedDisplayServer,
 
     #[error("capture failed: {0}")]
-    Capture(String),
+    Capture(#[from] CaptureError),
 
     #[error("OCR failed: {0}")]
     Ocr(String),
@@ -33,4 +33,24 @@ pub enum PixelensError {
     NotImplemented(&'static str),
 }
 
+/// Capture-layer error type. Distinct from [`PixelensError`] so the
+/// capture backends can describe their own failure modes (missing
+/// external tool, parse failure, subprocess failure) without polluting
+/// the umbrella enum.
+#[derive(Debug, Error)]
+pub enum CaptureError {
+    #[error("required tool not found on $PATH: {0}")]
+    ToolMissing(String),
+
+    #[error("region selector failed: {0}")]
+    Selector(String),
+
+    #[error("screen capture failed: {0}")]
+    Capture(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 pub type PixelensResult<T> = Result<T, PixelensError>;
+pub type CaptureResult<T> = Result<T, CaptureError>;
