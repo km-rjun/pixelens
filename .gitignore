@@ -1,0 +1,35 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock.bak
+
+# Environment
+.env
+**/.env*
+
+# IDEs and editors
+.idea/
+.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+release/
+
+# OS noise
+*~
+*.swp
+*.swo
+
+# Coverage / profiling
+*.profraw
+*.gcda
+*.gcno
+lcov.info
+coverage/
+
+# Local config overrides
+.env.local
+*.local.toml

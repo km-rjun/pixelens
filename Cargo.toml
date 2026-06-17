@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "pixelens-core",
+    "pixelens-ipc",
+    "pixelens-config",
+    "pixelens-ocr",
+    "pixelens-capture",
+    "pixelens-overlay",
+    "pixelens-notify",
+    "pixelens-daemon",
+    "pixelens-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/km-rjun/pixelens"
+authors = ["km-rjun"]
+description = "Linux-native visual text extraction utility"
+
+[workspace.dependencies]
+# Shared internal crates
+pixelens-core = { path = "pixelens-core" }
+pixelens-ipc = { path = "pixelens-ipc" }
+pixelens-config = { path = "pixelens-config" }
+pixelens-ocr = { path = "pixelens-ocr" }
+pixelens-capture = { path = "pixelens-capture" }
+pixelens-overlay = { path = "pixelens-overlay" }
+pixelens-notify = { path = "pixelens-notify" }
+
+# External dependencies pinned at workspace level
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
