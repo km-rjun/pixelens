@@ -9,12 +9,14 @@
 //! documentation in `slurp_grim.rs` for the rationale.
 
 pub mod detector;
+pub mod pipeline;
 pub mod slurp_grim;
 pub mod wayland;
 pub mod which;
 pub mod x11;
 
 pub use detector::{detect_display_server, DisplayServer};
+pub use pipeline::{GrabError, GrabErrorKind, GrabOutcome, GrabPipeline};
 pub use slurp_grim::{
     format_geometry, parse_geometry, GrimCapturer, RegionSelector, ScreenCapturer, SlurpSelector,
 };
