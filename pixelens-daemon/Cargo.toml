@@ -1,0 +1,27 @@
+[package]
+name = "pixelens-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pixelens background daemon (pixelensd)"
+
+[[bin]]
+name = "pixelensd"
+path = "src/main.rs"
+
+[dependencies]
+pixelens-core = { workspace = true }
+pixelens-capture = { workspace = true }
+pixelens-config = { workspace = true }
+pixelens-ipc = { workspace = true }
+pixelens-notify = { workspace = true }
+pixelens-ocr = { workspace = true }
+pixelens-overlay = { workspace = true }
+
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
