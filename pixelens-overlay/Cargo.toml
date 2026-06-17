@@ -1,0 +1,13 @@
+[package]
+name = "pixelens-overlay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Region selection overlay (layer-shell on Wayland, XCB on X11)"
+
+[dependencies]
+pixelens-core = { workspace = true }
+thiserror = { workspace = true }
