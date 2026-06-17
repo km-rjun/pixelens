@@ -11,12 +11,14 @@
 pub mod detector;
 pub mod slurp_grim;
 pub mod wayland;
+pub mod which;
 pub mod x11;
 
 pub use detector::{detect_display_server, DisplayServer};
 pub use slurp_grim::{
     format_geometry, parse_geometry, GrimCapturer, RegionSelector, ScreenCapturer, SlurpSelector,
 };
+pub use which::{which, WhichError};
 
 use pixelens_core::{CaptureProvider, CaptureRequest, PixelensError, RawCapture};
 use std::sync::Arc;
