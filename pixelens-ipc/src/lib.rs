@@ -17,5 +17,6 @@ pub mod protocol;
 
 pub use codec::{read_frame, write_frame, FrameError, MAX_FRAME_SIZE};
 pub use protocol::{
-    Command, IpcError, IpcRequest, IpcResponse, RequestId, ResponseStatus, CANCEL_COMMAND,
+    Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest, IpcResponse, RequestId,
+    ResponseStatus, CANCEL_COMMAND,
 };
