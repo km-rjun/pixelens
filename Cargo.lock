@@ -234,8 +234,11 @@ dependencies = [
  "pixelens-config",
  "pixelens-core",
  "pixelens-ipc",
+ "serde_json",
+ "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
