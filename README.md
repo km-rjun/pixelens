@@ -1,84 +1,35 @@
-# Pixelens
+Pixelens - Linux-native visual text extraction
 
-Linux-native visual text extraction utility.
-
-Press a hotkey → select a region → text is on your clipboard. That's it.
-
-Pixelens is a lightweight, keyboard-driven alternative to screenshot tools like Flameshot and Grim, but focused on **text extraction**, not screenshots. No menus, no AI prompts, no cloud, no accounts.
-
-## Goals
-
-The fastest workflow must be:
-
-```
-Hotkey → Select Region → Text Copied
-```
-
-The user must never be forced through menus, confirmations, AI prompts, account creation, cloud services, or provider selection.
-
-## Status
-
-**v0.1.0 — Project scaffold.** Implementation proceeds milestone-by-milestone per `PRD.md` (see `docs/`).
-
-| Milestone | Description | Status |
-|---|---|---|
-| 1 | Project Setup (workspace, crate stubs, CI) | in progress |
-| 2 | Display Server Detection | pending |
-| 3 | Capture (Wayland) | pending |
-| 4 | Capture (X11) | pending |
-| 5 | OCR (Tesseract) | pending |
-| 6 | IPC (Unix socket) | pending |
-| 7 | Clipboard & Notifications | pending |
-| 8 | Configuration | pending |
-| 9 | Tray | pending |
-| 10 | Packaging (AUR, releases) | pending |
-| 11 | Testing & Release | pending |
+## Overview
+Pixelens is a CLI tool that leverages Wayland's IPC for screen capture and text extraction.
+It provides a daemon (`pixelensd`) and a client (`pixelens`) to interact with the system.
 
 ## Architecture
 
-Two binaries share a workspace of focused crates:
+Pixelens uses Wayland's IPC to create a local pipeline that handles screen capture and text extraction. The workflow consists of:
 
-| Crate | Purpose |
-|---|---|
-| `pixelens-daemon` | `pixelensd` — background service: display detection, capture, OCR, tray, IPC |
-| `pixelens-cli` | `pixelens` — thin CLI client speaking to the daemon over a Unix socket |
-| `pixelens-core` | Shared types, error enum, base traits |
-| `pixelens-capture` | `CaptureProvider` trait + Wayland / X11 implementations |
-| `pixelens-ocr` | `OcrEngine` trait + Tesseract implementation |
-| `pixelens-overlay` | Region selection overlay (layer-shell / XCB) |
-| `pixelens-notify` | Notification abstraction (libnotify / portal) |
-| `pixelens-config` | `config.toml` parsing + `pixelens config` commands |
-| `pixelens-ipc` | Length-prefixed JSON over Unix domain socket |
+1. **Daemon (`pixelensd`)** — binds a Unix socket and runs in the background
+2. **Screen Capturer (`slurp`)** — selects an area and exits with geometry
+3. **Capture Engine (`grim`)** — writes the captured area as a PNG file
+4. **Client (`pixelens`)** — interacts with the daemon and processes the file path
 
-## Build
+The IPC is implemented via `pixelens-ipc`, which handles the full pipeline. This enables the daemon to communicate with the CLI and report status, errors, or capture paths in a structured manner.
 
-Requires Rust 1.75+ and (for runtime) the `tesseract` binary.
+## Installation
 
-```bash
-cargo build --release
+### Dependencies
+- `slurp` for region selection
+- `grim` for capturing and saving as PNG
+- `pixelensd` (daemon) and `pixelens` (client)
+
+### Building
+1. Ensure `Cargo.toml` is set up correctly:
+
 ```
-
-The two binaries land in `target/release/`:
-
-- `target/release/pixelensd` — the daemon
-- `target/release/pixelens`  — the CLI
-
-## Usage
-
-```bash
-pixelens                 # show help
-pixelens grab            # one-shot capture: select region, copy text
-pixelens daemon          # start the daemon in foreground
-pixelens status          # show daemon status
-pixelens stop            # stop the daemon
-pixelens config          # manage configuration
-```
-
-## Supported Platforms
-
-- **Display servers:** Wayland, X11
-- **Compositors / DEs:** Hyprland, Sway, i3, DWM, GNOME, KDE Plasma
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+[dependencies]
+anyhow = { version = "1.0", features = ["std"] }
+serde_json = { version = "1.0", features = ["std"] }
+thiserror = { version = "1.0", features = ["std"] }
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.1", features = ["std"] }
+tokio = { version = "1.0", features = ["rt
