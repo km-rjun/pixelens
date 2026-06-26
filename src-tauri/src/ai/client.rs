@@ -47,25 +47,21 @@ impl OpenAiClient {
             model,
         }
     }
-}
 
-impl AiProvider for OpenAiClient {
-    fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
+    fn build_request(&self, request: &AiRequest) -> ChatRequest {
         let mut content = serde_json::Value::Array(vec![]);
 
         if let Some(ref path) = request.image_path {
-            let image_data =
-                fs::read(path).map_err(|e| AiError::RequestFailed(format!("Read image: {}", e)))?;
-            let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_data);
-
-            let image_content = serde_json::json!({
-                "type": "image_url",
-                "image_url": {
-                    "url": format!("data:image/png;base64,{}", base64_image)
-                }
-            });
-
-            content.as_array_mut().unwrap().push(image_content);
+            if let Ok(image_data) = fs::read(path) {
+                let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_data);
+                let image_content = serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:image/png;base64,{}", base64_image)
+                    }
+                });
+                content.as_array_mut().unwrap().push(image_content);
+            }
         }
 
         let text_content = serde_json::json!({
@@ -74,13 +70,35 @@ impl AiProvider for OpenAiClient {
         });
         content.as_array_mut().unwrap().push(text_content);
 
-        let chat_request = ChatRequest {
+        ChatRequest {
             model: self.model.clone(),
             messages: vec![Message {
                 role: "user".to_string(),
                 content,
             }],
-        };
+        }
+    }
+
+    fn parse_response(&self, body: &str) -> Result<AiResponse, AiError> {
+        let chat_response: ChatResponse =
+            serde_json::from_str(body).map_err(|e| AiError::InvalidResponse(format!("{}", e)))?;
+
+        let content = chat_response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .ok_or_else(|| AiError::InvalidResponse("No choices in response".to_string()))?;
+
+        Ok(AiResponse {
+            content,
+            model: self.model.clone(),
+        })
+    }
+}
+
+impl AiProvider for OpenAiClient {
+    fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
+        let chat_request = self.build_request(request);
 
         let url = format!("{}/chat/completions", self.endpoint);
         let response = ureq::post(&url)
@@ -94,19 +112,7 @@ impl AiProvider for OpenAiClient {
             .read_to_string()
             .map_err(|e| AiError::RequestFailed(format!("Read response: {}", e)))?;
 
-        let chat_response: ChatResponse =
-            serde_json::from_str(&body).map_err(|e| AiError::InvalidResponse(format!("{}", e)))?;
-
-        let content = chat_response
-            .choices
-            .first()
-            .map(|c| c.message.content.clone())
-            .ok_or_else(|| AiError::InvalidResponse("No choices in response".to_string()))?;
-
-        Ok(AiResponse {
-            content,
-            model: self.model.clone(),
-        })
+        self.parse_response(&body)
     }
 
     fn name(&self) -> &str {
@@ -126,5 +132,118 @@ mod tests {
             "gpt-4o".to_string(),
         );
         assert_eq!(client.name(), "openai");
+    }
+
+    #[test]
+    fn test_build_request_text_only() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "Hello world".to_string(),
+            image_path: None,
+        };
+
+        let chat_request = client.build_request(&request);
+        assert_eq!(chat_request.model, "gpt-4o");
+        assert_eq!(chat_request.messages.len(), 1);
+        assert_eq!(chat_request.messages[0].role, "user");
+
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["type"], "text");
+        assert_eq!(arr[0]["text"], "Hello world");
+    }
+
+    #[test]
+    fn test_build_request_with_image() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "Describe this".to_string(),
+            image_path: Some("/tmp/test_ocr.png".to_string()),
+        };
+
+        let chat_request = client.build_request(&request);
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["type"], "image_url");
+        assert_eq!(arr[1]["type"], "text");
+    }
+
+    #[test]
+    fn test_parse_response_valid() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let response_json = r#"{
+            "choices": [{
+                "message": {
+                    "content": "Hello from AI"
+                }
+            }]
+        }"#;
+
+        let result = client.parse_response(response_json).unwrap();
+        assert_eq!(result.content, "Hello from AI");
+        assert_eq!(result.model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_parse_response_empty_choices() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let response_json = r#"{"choices": []}"#;
+        let result = client.parse_response(response_json);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AiError::InvalidResponse(msg) => assert!(msg.contains("No choices")),
+            _ => panic!("Expected InvalidResponse error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_response_invalid_json() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let result = client.parse_response("not json");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AiError::InvalidResponse(_) => {}
+            _ => panic!("Expected InvalidResponse error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_response_malformed() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let response_json = r#"{"not_choices": []}"#;
+        let result = client.parse_response(response_json);
+        assert!(result.is_err());
     }
 }
