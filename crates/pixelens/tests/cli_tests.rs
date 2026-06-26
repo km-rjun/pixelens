@@ -84,20 +84,40 @@ fn test_image_help() {
 }
 
 #[test]
-fn test_status_when_daemon_not_running() {
+fn test_daemon_help() {
     Command::cargo_bin("pixelens")
         .unwrap()
-        .arg("status")
+        .args(["daemon", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Manage the pixelensd daemon"));
+}
+
+#[test]
+fn test_daemon_start_help() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .args(["daemon", "start", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Start the daemon process"));
+}
+
+#[test]
+fn test_daemon_status_when_not_running() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .args(["daemon", "status"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Daemon: stopped"));
 }
 
 #[test]
-fn test_stop_when_daemon_not_running() {
+fn test_daemon_stop_when_not_running() {
     Command::cargo_bin("pixelens")
         .unwrap()
-        .arg("stop")
+        .args(["daemon", "stop"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Daemon was not running"));

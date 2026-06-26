@@ -43,14 +43,11 @@ enum Commands {
     /// Select a region, perform reverse image search
     Image,
 
-    /// Start the daemon
-    Daemon,
-
-    /// Show daemon status
-    Status,
-
-    /// Stop the daemon
-    Stop,
+    /// Manage the pixelensd daemon
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
 
     /// Show or set configuration
     Config {
@@ -75,6 +72,16 @@ enum Commands {
     Version,
 }
 
+#[derive(Subcommand)]
+enum DaemonAction {
+    /// Start the daemon process
+    Start,
+    /// Check daemon status
+    Status,
+    /// Stop the daemon gracefully
+    Stop,
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -88,9 +95,11 @@ async fn main() {
         Commands::Ai { prompt } => cmd_ai(prompt.as_deref()).await,
         Commands::Translate { to } => cmd_translate(&to).await,
         Commands::Image => cmd_image().await,
-        Commands::Daemon => cmd_daemon().await,
-        Commands::Status => cmd_status().await,
-        Commands::Stop => cmd_stop().await,
+        Commands::Daemon { action } => match action {
+            DaemonAction::Start => cmd_daemon_start(),
+            DaemonAction::Status => cmd_daemon_status().await,
+            DaemonAction::Stop => cmd_daemon_stop().await,
+        },
         Commands::Config {
             endpoint,
             model,
@@ -118,7 +127,7 @@ async fn do_grab() -> Result<(String, Option<String>), i32> {
             }
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
-            eprintln!("Daemon not running. Start with: pixelens daemon");
+            eprintln!("Daemon not running. Start with: pixelens daemon start");
             Err(1)
         }
         Err(e) => {
@@ -216,7 +225,7 @@ async fn cmd_ai(prompt: Option<&str>) -> i32 {
             1
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
-            eprintln!("Daemon not running. Start with: pixelens daemon");
+            eprintln!("Daemon not running. Start with: pixelens daemon start");
             1
         }
         Err(e) => {
@@ -258,7 +267,7 @@ async fn cmd_translate(to: &str) -> i32 {
             1
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
-            eprintln!("Daemon not running. Start with: pixelens daemon");
+            eprintln!("Daemon not running. Start with: pixelens daemon start");
             1
         }
         Err(e) => {
@@ -287,7 +296,7 @@ async fn cmd_image() -> i32 {
             }
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
-            eprintln!("Daemon not running. Start with: pixelens daemon");
+            eprintln!("Daemon not running. Start with: pixelens daemon start");
             1
         }
         Err(e) => {
@@ -302,35 +311,38 @@ async fn cmd_image() -> i32 {
     }
 }
 
-async fn cmd_daemon() -> i32 {
-    let server = pixelens_core::ipc::server::IpcServer::new();
-    log::info!("Starting Pixelens daemon...");
+fn cmd_daemon_start() -> i32 {
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("pixelensd")).or(Some(p)));
 
-    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
-    let notify_clone = notify.clone();
+    let exe_path = match exe {
+        Some(p) => p,
+        None => {
+            eprintln!("Could not determine pixelensd path");
+            return 1;
+        }
+    };
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        log::info!("Shutdown signal received");
-        notify_clone.notify_one();
-    });
+    if !exe_path.exists() {
+        eprintln!("pixelensd not found at: {}", exe_path.display());
+        eprintln!("Build it with: cargo build --release -p pixelensd");
+        return 1;
+    }
 
-    let server_clone = server.clone();
-    tokio::spawn(async move {
-        notify.notified().await;
-        server_clone.stop();
-        process::exit(0);
-    });
-
-    if let Err(e) = server.start().await {
-        eprintln!("Daemon error: {}", e);
-        1
-    } else {
-        0
+    match process::Command::new(&exe_path).spawn() {
+        Ok(child) => {
+            eprintln!("pixelensd started (pid: {})", child.id());
+            0
+        }
+        Err(e) => {
+            eprintln!("Failed to start pixelensd: {}", e);
+            1
+        }
     }
 }
 
-async fn cmd_status() -> i32 {
+async fn cmd_daemon_status() -> i32 {
     let client = IpcClient::new();
     match client.status().await {
         Ok((running, capture_missing, ocr_missing)) => {
@@ -358,7 +370,7 @@ async fn cmd_status() -> i32 {
     }
 }
 
-async fn cmd_stop() -> i32 {
+async fn cmd_daemon_stop() -> i32 {
     let client = IpcClient::new();
     match client.stop().await {
         Ok(()) => {

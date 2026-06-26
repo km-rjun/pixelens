@@ -20,7 +20,7 @@ A Linux-native visual search and OCR utility.
 pixelens/
 ├── crates/
 │   ├── pixelens/           # CLI binary
-│   ├── pixelensd/          # Daemon binary
+│   ├── pixelensd/          # Daemon binary (single source of truth)
 │   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, hotkey)
 ├── docs/
 ├── Cargo.toml              # Workspace root
@@ -39,6 +39,7 @@ pixelens/
 
 ```bash
 cargo install --path crates/pixelens
+cargo install --path crates/pixelensd
 ```
 
 ## Usage
@@ -67,13 +68,13 @@ pixelens translate --to French
 pixelens image
 
 # Start the daemon
-pixelens daemon
+pixelens daemon start
 
-# Show daemon status
-pixelens status
+# Check daemon status
+pixelens daemon status
 
 # Stop the daemon
-pixelens stop
+pixelens daemon stop
 
 # Show configuration
 pixelens config
