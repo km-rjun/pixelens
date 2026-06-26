@@ -348,16 +348,16 @@ mod ocr_cleanup_integration {
     use crate::ocr::clean_ocr_output;
 
     #[test]
-    fn test_ocr_cleanup_applied_before_response() {
-        let raw = "Join us now to add more\n\n\n\nknowledge and share it with the world!";
+    fn test_ocr_cleanup_removes_excessive_blanks() {
+        let raw = "Title\n\n\n\nBody text.";
         let cleaned = clean_ocr_output(raw);
-        assert_eq!(
-            cleaned,
-            "Join us now to add more\nknowledge and share it with the world!"
-        );
-        assert!(
-            !cleaned.contains("\n\n"),
-            "Should have no blank lines between text"
-        );
+        assert_eq!(cleaned, "Title\n\nBody text.");
+    }
+
+    #[test]
+    fn test_ocr_cleanup_preserves_paragraphs() {
+        let raw = "First.\n\nSecond.";
+        let cleaned = clean_ocr_output(raw);
+        assert_eq!(cleaned, "First.\n\nSecond.");
     }
 }

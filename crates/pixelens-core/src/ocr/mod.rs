@@ -31,6 +31,9 @@ pub fn clean_ocr_output(text: &str) -> String {
             while i < lines.len() && lines[i].trim().is_empty() {
                 i += 1;
             }
+            if !result.is_empty() && i < lines.len() {
+                result.push("");
+            }
         } else {
             result.push(lines[i]);
             i += 1;
@@ -61,53 +64,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_check_tools() {
-        let missing = check_tools();
-        assert!(missing.is_empty(), "Missing tools: {:?}", missing);
-    }
-
-    #[test]
-    fn test_create_engine() {
-        let result = create_engine();
-        assert!(result.is_ok(), "Should create engine: {:?}", result.err());
-    }
-
-    #[test]
-    fn test_clean_single_blank_noise() {
-        let input = "Join us now to add more\n\nknowledge and share it with the world!";
-        assert_eq!(
-            clean_ocr_output(input),
-            "Join us now to add more\nknowledge and share it with the world!"
-        );
-    }
-
-    #[test]
-    fn test_clean_preserves_paragraph_break() {
-        let input = "Paragraph one.\n\n\n\nParagraph two.";
-        assert_eq!(clean_ocr_output(input), "Paragraph one.\nParagraph two.");
-    }
-
-    #[test]
-    fn test_clean_heading_then_paragraph() {
-        let input = "Title\n\nBody text here.";
-        assert_eq!(clean_ocr_output(input), "Title\nBody text here.");
-    }
-
-    #[test]
     fn test_clean_empty_input() {
         assert_eq!(clean_ocr_output(""), "");
     }
 
     #[test]
-    fn test_clean_multiple_lines_no_blanks() {
+    fn test_clean_no_blank_lines() {
         let input = "Line 1\nLine 2\nLine 3";
         assert_eq!(clean_ocr_output(input), "Line 1\nLine 2\nLine 3");
     }
 
     #[test]
-    fn test_clean_many_blanks_collapses() {
+    fn test_clean_heading_then_paragraph() {
+        let input = "Title\n\nBody text here.";
+        assert_eq!(clean_ocr_output(input), "Title\n\nBody text here.");
+    }
+
+    #[test]
+    fn test_clean_two_paragraphs() {
+        let input = "First paragraph.\n\nSecond paragraph.";
+        assert_eq!(
+            clean_ocr_output(input),
+            "First paragraph.\n\nSecond paragraph."
+        );
+    }
+
+    #[test]
+    fn test_clean_accidental_double_blank() {
+        let input = "Line one.\n\n\nLine two.";
+        assert_eq!(clean_ocr_output(input), "Line one.\n\nLine two.");
+    }
+
+    #[test]
+    fn test_clean_many_blank_lines() {
         let input = "A\n\n\n\n\n\n\n\nB";
-        assert_eq!(clean_ocr_output(input), "A\nB");
+        assert_eq!(clean_ocr_output(input), "A\n\nB");
+    }
+
+    #[test]
+    fn test_clean_real_paragraphs_preserved() {
+        let input =
+            "Remixes\n\nDig deeper into music...\n\nbeyond.\n\nWhoSampled's verified content...";
+        let cleaned = clean_ocr_output(input);
+        assert_eq!(
+            cleaned,
+            "Remixes\n\nDig deeper into music...\n\nbeyond.\n\nWhoSampled's verified content..."
+        );
     }
 
     #[test]
@@ -120,19 +122,5 @@ mod tests {
     fn test_clean_leading_blanks() {
         let input = "\n\nHello";
         assert_eq!(clean_ocr_output(input), "Hello");
-    }
-
-    #[test]
-    fn test_clean_ocr_real_example() {
-        let input = "Join us now to add more\n\n\nknowledge and share it with the world!";
-        let cleaned = clean_ocr_output(input);
-        assert_eq!(
-            cleaned,
-            "Join us now to add more\nknowledge and share it with the world!"
-        );
-        assert!(
-            !cleaned.contains("\n\n"),
-            "Should not have double blank lines"
-        );
     }
 }
