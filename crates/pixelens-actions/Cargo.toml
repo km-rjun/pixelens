@@ -1,0 +1,17 @@
+[package]
+name = "pixelens-actions"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Action handlers for Pixelens"
+
+[dependencies]
+pixelens-common.workspace = true
+pixelens-config.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+base64.workspace = true
+urlencoding.workspace = true
+log.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "pixelensd"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Pixelens daemon for background capture and processing"
+
+[[bin]]
+name = "pixelensd"
+path = "src/main.rs"
+
+[dependencies]
+pixelens-common.workspace = true
+pixelens-config.workspace = true
+pixelens-capture.workspace = true
+pixelens-ocr.workspace = true
+pixelens-actions.workspace = true
+tokio.workspace = true
+log.workspace = true
+env_logger.workspace = true

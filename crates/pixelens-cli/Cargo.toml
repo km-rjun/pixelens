@@ -1,0 +1,21 @@
+[package]
+name = "pixelens-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "CLI for Pixelens"
+
+[[bin]]
+name = "pixelens"
+path = "src/main.rs"
+
+[dependencies]
+pixelens-common.workspace = true
+pixelens-config.workspace = true
+pixelens-capture.workspace = true
+pixelens-ocr.workspace = true
+pixelens-actions.workspace = true
+clap.workspace = true
+log.workspace = true
+env_logger.workspace = true

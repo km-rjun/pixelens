@@ -1,0 +1,11 @@
+[package]
+name = "pixelens-ocr"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "OCR using Tesseract"
+
+[dependencies]
+pixelens-common.workspace = true
+log.workspace = true

@@ -1,32 +1,91 @@
-# React + TypeScript + Vite
+# Pixelens
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A Linux-native visual search and OCR utility.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Screen Capture**: Select any region of your screen using grim/slurp
+- **OCR**: Extract text from captured images using Tesseract
+- **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
+- **Actions**: Copy text, web search, reverse image search, translate
 
-## React Compiler
+## Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```
+pixelens/
+├── crates/
+│   ├── pixelens-common/     # Shared types and errors
+│   ├── pixelens-config/     # Configuration management
+│   ├── pixelens-capture/    # Screen capture (grim/slurp)
+│   ├── pixelens-ocr/        # OCR (Tesseract)
+│   ├── pixelens-actions/    # Action handlers
+│   ├── pixelens-cli/        # CLI binary
+│   └── pixelensd/           # Daemon binary
+└── docs/
+```
 
-## Expanding the Oxlint configuration
+## Requirements
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- Rust 1.77.2+
+- grim (Wayland screenshot tool)
+- slurp (Wayland region selector)
+- tesseract-ocr
+
+## Installation
+
+```bash
+cargo install --path crates/pixelens-cli
+```
+
+## Usage
+
+```bash
+# Capture a region
+pixelens capture
+
+# Perform OCR on an image
+pixelens ocr --image screenshot.png
+
+# Ask AI about an image
+pixelens ai --prompt "What is this?" --image screenshot.png
+
+# Execute an action
+pixelens action --name search --text "rust programming"
+
+# Check required tools
+pixelens check
+
+# Show configuration
+pixelens config
+```
+
+## Configuration
+
+Configuration is stored at `~/.config/pixelens/config.json`:
 
 ```json
 {
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  "api_endpoint": "https://api.openai.com/v1",
+  "api_key": "sk-...",
+  "model": "gpt-4o",
+  "ocr_language": "eng",
+  "hotkey": "Ctrl+Shift+C"
 }
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Development
+
+```bash
+# Run tests
+cargo test
+
+# Check formatting
+cargo fmt --all -- --check
+
+# Run clippy
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+## License
+
+MIT

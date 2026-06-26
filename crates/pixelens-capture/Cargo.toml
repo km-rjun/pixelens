@@ -1,0 +1,11 @@
+[package]
+name = "pixelens-capture"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Screen capture using grim and slurp"
+
+[dependencies]
+pixelens-common.workspace = true
+log.workspace = true

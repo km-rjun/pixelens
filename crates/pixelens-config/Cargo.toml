@@ -1,0 +1,14 @@
+[package]
+name = "pixelens-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Configuration management for Pixelens"
+
+[dependencies]
+pixelens-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dirs.workspace = true
+log.workspace = true
