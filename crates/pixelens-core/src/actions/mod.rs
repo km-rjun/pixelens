@@ -15,7 +15,7 @@ pub trait ActionHandler {
 pub fn get_handler(action: &ActionType) -> Result<Box<dyn ActionHandler>, PixelensError> {
     match action {
         ActionType::CopyToClipboard => Ok(Box::new(copy::CopyHandler)),
-        ActionType::SearchWeb => Ok(Box::new(search::SearchHandler)),
+        ActionType::SearchWeb => Ok(Box::new(search::SearchHandler::default())),
         ActionType::ReverseImageSearch => Ok(Box::new(reverse_image::ReverseImageHandler)),
         ActionType::Translate(ref lang) => Ok(Box::new(translate::TranslateHandler {
             target_lang: lang.clone(),
