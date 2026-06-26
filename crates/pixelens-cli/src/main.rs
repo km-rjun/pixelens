@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
+use std::str::FromStr;
 
 use pixelens_actions::get_action_names;
-use pixelens_capture::{check_tools as check_capture_tools, detect_backend};
+use pixelens_common::ActionType;
 use pixelens_config::Config;
-use pixelens_ocr::{check_tools as check_ocr_tools, create_engine};
+use pixelens_ipc::client::IpcClient;
+use pixelens_ipc::protocol::{Request, Response};
 
 #[derive(Parser)]
 #[command(name = "pixelens")]
@@ -83,20 +85,24 @@ enum Commands {
         #[arg(short, long)]
         language: Option<String>,
     },
+
+    /// Start the daemon
+    Daemon,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Capture => cmd_capture(),
-        Commands::Ocr { image, language } => cmd_ocr(&image, &language),
-        Commands::Ai { prompt, image } => cmd_ai(&prompt, image.as_deref()),
-        Commands::Action { name, text, image } => cmd_action(&name, &text, image.as_deref()),
+        Commands::Capture => cmd_capture().await,
+        Commands::Ocr { image, language } => cmd_ocr(&image, &language).await,
+        Commands::Ai { prompt, image } => cmd_ai(&prompt, image.as_deref()).await,
+        Commands::Action { name, text, image } => cmd_action(&name, &text, image.as_deref()).await,
         Commands::Actions => cmd_actions(),
-        Commands::Check => cmd_check(),
+        Commands::Check => cmd_check().await,
         Commands::Config => cmd_config(),
         Commands::SaveConfig {
             endpoint,
@@ -106,53 +112,54 @@ fn main() {
         } => {
             cmd_save_config(endpoint, key, model, language);
         }
+        Commands::Daemon => cmd_daemon().await,
     }
 }
 
-fn cmd_capture() {
-    match detect_backend() {
-        Ok(backend) => match backend.select_region() {
-            Ok(region) => match backend.capture(&region) {
-                Ok(result) => println!("{}", result.image_path),
-                Err(e) => eprintln!("Capture failed: {}", e),
-            },
-            Err(e) => eprintln!("Selection failed: {}", e),
-        },
-        Err(e) => eprintln!("No capture backend: {}", e),
+async fn cmd_capture() {
+    let client = IpcClient::new();
+    match client.send(Request::Capture).await {
+        Ok(Response::CaptureResult { image_path, .. }) => println!("{}", image_path),
+        Ok(Response::Error(e)) => eprintln!("Capture failed: {}", e),
+        Ok(_) => eprintln!("Unexpected response"),
+        Err(e) => eprintln!("IPC error: {}", e),
     }
 }
 
-fn cmd_ocr(image: &str, language: &str) {
-    match create_engine() {
-        Ok(engine) => match engine.perform_ocr(image, language) {
-            Ok(result) => print!("{}", result.text),
-            Err(e) => eprintln!("OCR failed: {}", e),
-        },
-        Err(e) => eprintln!("OCR engine not available: {}", e),
+async fn cmd_ocr(image: &str, language: &str) {
+    let client = IpcClient::new();
+    match client
+        .send(Request::Ocr {
+            image_path: image.to_string(),
+            language: language.to_string(),
+        })
+        .await
+    {
+        Ok(Response::OcrResult(result)) => print!("{}", result.text),
+        Ok(Response::Error(e)) => eprintln!("OCR failed: {}", e),
+        Ok(_) => eprintln!("Unexpected response"),
+        Err(e) => eprintln!("IPC error: {}", e),
     }
 }
 
-fn cmd_ai(prompt: &str, image: Option<&str>) {
-    let config = Config::load();
-    let client = pixelens_actions::ai::OpenAiClient::new(
-        config.api_endpoint.clone(),
-        config.api_key.clone(),
-        config.model.clone(),
-    );
-
-    let request = pixelens_common::AiRequest {
-        prompt: prompt.to_string(),
-        image_path: image.map(|s| s.to_string()),
-    };
-
-    match client.chat(&request) {
-        Ok(response) => println!("{}", response.content),
-        Err(e) => eprintln!("AI request failed: {}", e),
+async fn cmd_ai(prompt: &str, image: Option<&str>) {
+    let client = IpcClient::new();
+    match client
+        .send(Request::Ai {
+            prompt: prompt.to_string(),
+            image_path: image.map(|s| s.to_string()),
+        })
+        .await
+    {
+        Ok(Response::AiResult { content, .. }) => println!("{}", content),
+        Ok(Response::Error(e)) => eprintln!("AI request failed: {}", e),
+        Ok(_) => eprintln!("Unexpected response"),
+        Err(e) => eprintln!("IPC error: {}", e),
     }
 }
 
-fn cmd_action(name: &str, text: &str, image: Option<&str>) {
-    let action_type = match name.parse::<pixelens_common::ActionType>() {
+async fn cmd_action(name: &str, text: &str, image: Option<&str>) {
+    let action_type = match ActionType::from_str(name) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Invalid action: {}", e);
@@ -160,22 +167,19 @@ fn cmd_action(name: &str, text: &str, image: Option<&str>) {
         }
     };
 
-    let handler = match pixelens_actions::get_handler(&action_type) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("Failed to get handler: {}", e);
-            return;
-        }
-    };
-
-    let payload = pixelens_common::ActionPayload {
-        text: text.to_string(),
-        image_path: image.map(|s| s.to_string()),
-    };
-
-    match handler.execute(&payload) {
-        Ok(result) => println!("{}", result),
-        Err(e) => eprintln!("Action failed: {}", e),
+    let client = IpcClient::new();
+    match client
+        .send(Request::Action {
+            action: action_type,
+            text: text.to_string(),
+            image_path: image.map(|s| s.to_string()),
+        })
+        .await
+    {
+        Ok(Response::ActionResult(result)) => println!("{}", result),
+        Ok(Response::Error(e)) => eprintln!("Action failed: {}", e),
+        Ok(_) => eprintln!("Unexpected response"),
+        Err(e) => eprintln!("IPC error: {}", e),
     }
 }
 
@@ -185,18 +189,32 @@ fn cmd_actions() {
     }
 }
 
-fn cmd_check() {
-    let capture_missing = check_capture_tools();
-    let ocr_missing = check_ocr_tools();
-
-    if capture_missing.is_empty() && ocr_missing.is_empty() {
-        println!("All tools are installed");
-    } else {
-        if !capture_missing.is_empty() {
-            eprintln!("Missing capture tools: {}", capture_missing.join(", "));
+async fn cmd_check() {
+    let client = IpcClient::new();
+    match client.send(Request::CheckTools).await {
+        Ok(Response::ToolsStatus {
+            capture_missing,
+            ocr_missing,
+        }) => {
+            if capture_missing.is_empty() && ocr_missing.is_empty() {
+                println!("All tools are installed");
+            } else {
+                if !capture_missing.is_empty() {
+                    eprintln!("Missing capture tools: {}", capture_missing.join(", "));
+                }
+                if !ocr_missing.is_empty() {
+                    eprintln!("Missing OCR tools: {}", ocr_missing.join(", "));
+                }
+            }
         }
-        if !ocr_missing.is_empty() {
-            eprintln!("Missing OCR tools: {}", ocr_missing.join(", "));
+        Ok(Response::Error(e)) => eprintln!("Check failed: {}", e),
+        Ok(_) => eprintln!("Unexpected response"),
+        Err(e) => {
+            if let pixelens_ipc::IpcError::ConnectionFailed(_) = e {
+                eprintln!("Daemon not running. Start with: pixelens daemon");
+            } else {
+                eprintln!("IPC error: {}", e);
+            }
         }
     }
 }
@@ -236,5 +254,23 @@ fn cmd_save_config(
     match config.save() {
         Ok(()) => println!("Configuration saved"),
         Err(e) => eprintln!("Failed to save config: {}", e),
+    }
+}
+
+async fn cmd_daemon() {
+    let server = pixelens_ipc::server::IpcServer::new();
+    log::info!("Starting Pixelens daemon...");
+
+    // Start signal handler
+    let server_clone = pixelens_ipc::server::IpcServer::new();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        log::info!("Shutdown signal received");
+        server_clone.stop();
+        std::process::exit(0);
+    });
+
+    if let Err(e) = server.start().await {
+        eprintln!("Daemon error: {}", e);
     }
 }

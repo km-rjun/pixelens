@@ -1,6 +1,5 @@
-use tokio::signal;
-
 use pixelens_config::Config;
+use pixelens_ipc::server::IpcServer;
 
 #[tokio::main]
 async fn main() {
@@ -11,15 +10,19 @@ async fn main() {
     log::info!("API endpoint: {}", config.api_endpoint);
     log::info!("OCR language: {}", config.ocr_language);
 
-    // Wait for shutdown signal
-    match signal::ctrl_c().await {
-        Ok(()) => {
-            log::info!("Shutdown signal received");
-        }
-        Err(err) => {
-            log::error!("Failed to listen for shutdown signal: {}", err);
-        }
-    }
+    let server = IpcServer::new();
 
-    log::info!("Pixelens daemon stopped");
+    // Handle shutdown signal
+    let server_clone = IpcServer::new();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        log::info!("Shutdown signal received");
+        server_clone.stop();
+        std::process::exit(0);
+    });
+
+    if let Err(e) = server.start().await {
+        log::error!("Daemon error: {}", e);
+        std::process::exit(1);
+    }
 }

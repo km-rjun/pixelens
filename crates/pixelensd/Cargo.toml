@@ -16,6 +16,7 @@ pixelens-config.workspace = true
 pixelens-capture.workspace = true
 pixelens-ocr.workspace = true
 pixelens-actions.workspace = true
+pixelens-ipc.workspace = true
 tokio.workspace = true
 log.workspace = true
 env_logger.workspace = true
