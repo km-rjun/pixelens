@@ -12,6 +12,12 @@ pub struct Config {
     pub model: String,
     pub ocr_language: String,
     pub hotkey: String,
+    #[serde(default = "default_menu_backend")]
+    pub menu_backend: String,
+}
+
+fn default_menu_backend() -> String {
+    "auto".to_string()
 }
 
 impl Default for Config {
@@ -22,6 +28,7 @@ impl Default for Config {
             model: "gpt-4o".to_string(),
             ocr_language: "eng".to_string(),
             hotkey: "Ctrl+Shift+C".to_string(),
+            menu_backend: "auto".to_string(),
         }
     }
 }
@@ -41,7 +48,6 @@ impl Config {
             Self::default()
         };
 
-        // Check environment variable for API key
         if let Ok(env_key) = std::env::var("PIXELENS_API_KEY") {
             config.api_key = env_key;
         }
@@ -58,7 +64,6 @@ impl Config {
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent)?;
 
-        // Don't save API key to file if it came from environment
         let mut save_config = self.clone();
         if std::env::var("PIXELENS_API_KEY").is_ok() {
             save_config.api_key = String::new();
@@ -80,6 +85,7 @@ mod tests {
         assert_eq!(config.api_endpoint, "https://api.openai.com/v1");
         assert_eq!(config.model, "gpt-4o");
         assert_eq!(config.ocr_language, "eng");
+        assert_eq!(config.menu_backend, "auto");
     }
 
     #[test]

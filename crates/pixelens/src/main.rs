@@ -148,40 +148,128 @@ async fn cmd_grab() -> i32 {
         Err(code) => return code,
     };
 
-    println!("{}", text);
+    let config = pixelens_core::config::Config::load();
+    let backend = if config.menu_backend == "auto" {
+        pixelens_core::menu::detect_backend()
+    } else {
+        pixelens_core::menu::create_backend(&config.menu_backend)
+    };
 
-    pixelens_core::actions::print_action_menu();
-
-    let mut input = String::new();
-    if std::io::stdin().read_line(&mut input).is_err() {
-        eprintln!("Failed to read input");
-        return 1;
-    }
-
-    let choice = input.trim();
-    if choice == "q" || choice.is_empty() {
-        return 0;
-    }
-
-    let action = match pixelens_core::actions::parse_action_choice(choice, &text) {
-        Some(a) => a,
-        None => {
-            eprintln!("Invalid choice: {}", choice);
+    let backend = match backend {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Menu error: {}", e);
             return 1;
         }
     };
 
-    let client = IpcClient::new();
-    match client.action(action, &text, None).await {
-        Ok(result) => {
-            if !result.is_empty() {
-                println!("{}", result);
-            }
+    let choice = match backend.show_menu(&text) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Menu error: {}", e);
+            return 1;
+        }
+    };
+
+    match choice {
+        pixelens_core::menu::MenuChoice::Cancel => {
+            eprintln!("Cancelled");
             0
         }
-        Err(e) => {
-            eprintln!("Action failed: {}", e);
-            1
+        pixelens_core::menu::MenuChoice::Copy => {
+            let client = IpcClient::new();
+            match client
+                .action(
+                    pixelens_core::types::ActionType::CopyToClipboard,
+                    &text,
+                    None,
+                )
+                .await
+            {
+                Ok(_) => {
+                    eprintln!("Copied to clipboard");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Copy failed: {}", e);
+                    1
+                }
+            }
+        }
+        pixelens_core::menu::MenuChoice::Search => {
+            let client = IpcClient::new();
+            match client
+                .action(pixelens_core::types::ActionType::SearchWeb, &text, None)
+                .await
+            {
+                Ok(url) => {
+                    println!("{}", url);
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Search failed: {}", e);
+                    1
+                }
+            }
+        }
+        pixelens_core::menu::MenuChoice::Ai => {
+            let client = IpcClient::new();
+            let prompt = format!("Describe or explain the following text:\n\n{}", text);
+            match client
+                .send(pixelens_core::ipc::protocol::Request::Ai {
+                    prompt,
+                    image_path: None,
+                })
+                .await
+            {
+                Ok(pixelens_core::ipc::protocol::Response::AiResult { content, .. }) => {
+                    println!("{}", content);
+                    0
+                }
+                Ok(pixelens_core::ipc::protocol::Response::Error(e)) => {
+                    eprintln!("AI error: {}", e);
+                    1
+                }
+                Ok(_) => {
+                    eprintln!("Unexpected response");
+                    1
+                }
+                Err(e) => {
+                    eprintln!("AI request failed: {}", e);
+                    1
+                }
+            }
+        }
+        pixelens_core::menu::MenuChoice::Translate => {
+            let client = IpcClient::new();
+            let prompt = format!(
+                "Translate the following text to English. Return only the translation:\n\n{}",
+                text
+            );
+            match client
+                .send(pixelens_core::ipc::protocol::Request::Ai {
+                    prompt,
+                    image_path: None,
+                })
+                .await
+            {
+                Ok(pixelens_core::ipc::protocol::Response::AiResult { content, .. }) => {
+                    println!("{}", content);
+                    0
+                }
+                Ok(pixelens_core::ipc::protocol::Response::Error(e)) => {
+                    eprintln!("Translation error: {}", e);
+                    1
+                }
+                Ok(_) => {
+                    eprintln!("Unexpected response");
+                    1
+                }
+                Err(e) => {
+                    eprintln!("Translation failed: {}", e);
+                    1
+                }
+            }
         }
     }
 }
