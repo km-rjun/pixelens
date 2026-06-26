@@ -247,3 +247,41 @@ async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_server_creation() {
+        let server = IpcServer::new();
+        assert!(server.socket_path.to_string_lossy().contains("pixelens"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_ping() {
+        let response = handle_request(Request::Ping).await;
+        assert!(matches!(response, Response::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_handle_status() {
+        let response = handle_request(Request::Status).await;
+        assert!(matches!(response, Response::Status { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_handle_stop() {
+        let response = handle_request(Request::Stop).await;
+        assert!(matches!(response, Response::Stopped));
+    }
+
+    #[test]
+    fn test_concurrent_capture_guard() {
+        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
+        assert!(!was_capturing);
+        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
+        assert!(was_capturing);
+        CAPTURING.store(false, Ordering::SeqCst);
+    }
+}

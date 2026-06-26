@@ -40,4 +40,16 @@ mod tests {
         let handler = CopyHandler;
         assert!(matches!(handler.action_type(), ActionType::CopyToClipboard));
     }
+
+    #[test]
+    #[ignore = "requires wl-copy"]
+    fn test_copy_handler_invokes_wl_copy() {
+        let handler = CopyHandler;
+        let payload = ActionPayload {
+            text: "pixelens test".to_string(),
+            image_path: None,
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok(), "CopyHandler should call wl-copy");
+    }
 }
