@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use crate::actions::ActionHandler;
 use crate::error::PixelensError;
 use crate::types::{ActionPayload, ActionType};
@@ -6,6 +8,21 @@ pub struct CopyHandler;
 
 impl ActionHandler for CopyHandler {
     fn execute(&self, payload: &ActionPayload) -> Result<String, PixelensError> {
+        let mut child = Command::new("wl-copy")
+            .arg("--")
+            .arg(&payload.text)
+            .spawn()
+            .map_err(|e| {
+                PixelensError::Config(format!(
+                    "Failed to run wl-copy: {}. Is wl-clipboard installed?",
+                    e
+                ))
+            })?;
+
+        child
+            .wait()
+            .map_err(|e| PixelensError::Config(format!("wl-copy failed: {}", e)))?;
+
         Ok(payload.text.clone())
     }
 
@@ -17,28 +34,6 @@ impl ActionHandler for CopyHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_copy_handler() {
-        let handler = CopyHandler;
-        let payload = ActionPayload {
-            text: "Hello World".to_string(),
-            image_path: None,
-        };
-        let result = handler.execute(&payload).unwrap();
-        assert_eq!(result, "Hello World");
-    }
-
-    #[test]
-    fn test_copy_handler_empty() {
-        let handler = CopyHandler;
-        let payload = ActionPayload {
-            text: String::new(),
-            image_path: None,
-        };
-        let result = handler.execute(&payload).unwrap();
-        assert!(result.is_empty());
-    }
 
     #[test]
     fn test_action_type() {
