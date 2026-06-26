@@ -1,5 +1,11 @@
-mod commands;
-mod utils;
+pub mod actions;
+pub mod ai;
+pub mod capture;
+pub mod commands;
+pub mod error;
+pub mod ocr;
+pub mod types;
+pub mod utils;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
