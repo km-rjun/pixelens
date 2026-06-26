@@ -143,12 +143,46 @@ async fn do_grab() -> Result<(String, Option<String>), i32> {
 }
 
 async fn cmd_grab() -> i32 {
-    match do_grab().await {
-        Ok((text, _)) => {
-            println!("{}", text);
+    let (text, _) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    println!("{}", text);
+
+    pixelens_core::actions::print_action_menu();
+
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        eprintln!("Failed to read input");
+        return 1;
+    }
+
+    let choice = input.trim();
+    if choice == "q" || choice.is_empty() {
+        return 0;
+    }
+
+    let action = match pixelens_core::actions::parse_action_choice(choice, &text) {
+        Some(a) => a,
+        None => {
+            eprintln!("Invalid choice: {}", choice);
+            return 1;
+        }
+    };
+
+    let client = IpcClient::new();
+    match client.action(action, &text, None).await {
+        Ok(result) => {
+            if !result.is_empty() {
+                println!("{}", result);
+            }
             0
         }
-        Err(code) => code,
+        Err(e) => {
+            eprintln!("Action failed: {}", e);
+            1
+        }
     }
 }
 
