@@ -19,11 +19,12 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - Clean capture cancellation
 - `pixelens grab` showing action menu after OCR
 - `pixelens copy` copying OCR text via `wl-copy`
-- `pixelens search` returning search URL
-- `pixelens ai` sending text to configured AI provider
+- `pixelens search` returning search URL and opening browser
+- `pixelens ai` sending text and image to configured AI provider
 - `pixelens translate` translating OCR text
 - Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
+- Vision model detection for AI image input
 - CI passing on GitHub Actions
 
 ## Current Command Semantics
@@ -35,7 +36,7 @@ All commands are selection-first. Typed positional text is not the normal input 
 | `pixelens grab` | Select region, OCR, show action menu |
 | `pixelens copy` | Select region, OCR, copy to clipboard |
 | `pixelens search` | Select region, OCR, return search URL |
-| `pixelens ai` | Select region, OCR, send to AI (optional `--prompt`) |
+| `pixelens ai` | Select region, OCR, send text+image to AI (if model supports vision) |
 | `pixelens translate` | Select region, OCR, translate (optional `--to`) |
 | `pixelens image` | Not implemented (returns error) |
 | `pixelens daemon start` | Start pixelensd if not running |
@@ -64,7 +65,6 @@ Configure via `menu_backend` in config (default: "auto").
 - Reverse-image search incomplete (returns "not implemented")
 - Compositor keybindings currently provide the reliable Wayland trigger mechanism
 - OCR may preserve layout artifacts from Tesseract
-- Visual input to AI currently passes only OCR text, not the image
 
 ## Next Milestone
 
