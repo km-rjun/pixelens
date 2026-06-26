@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { AiResponse } from './types';
 
 export async function askAi(
   prompt: string,
@@ -6,12 +7,12 @@ export async function askAi(
   apiEndpoint?: string,
   apiKey?: string,
   model?: string
-): Promise<string> {
-  return await invoke<string>('ask_ai', {
+): Promise<AiResponse> {
+  return await invoke<AiResponse>('ask_ai', {
     prompt,
     imagePath,
-    apiEndpoint: apiEndpoint || 'https://api.openai.com/v1',
-    apiKey: apiKey || '',
+    apiEndpoint,
+    apiKey,
     model,
   });
 }

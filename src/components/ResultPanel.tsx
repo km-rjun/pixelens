@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { performOcr } from '../services/ocr'
 import { askAi } from '../services/ai'
+import { executeAction } from '../services/actions'
 
 interface ResultPanelProps {
   imagePath: string
@@ -17,8 +18,8 @@ function ResultPanel({ imagePath, ocrText, onOcrTextChange, onNewCapture }: Resu
   const handleOcr = async () => {
     setIsLoading(true)
     try {
-      const text = await performOcr(imagePath)
-      onOcrTextChange(text)
+      const result = await performOcr(imagePath)
+      onOcrTextChange(result.text)
     } catch (error) {
       console.error('OCR failed:', error)
     } finally {
@@ -28,13 +29,32 @@ function ResultPanel({ imagePath, ocrText, onOcrTextChange, onNewCapture }: Resu
 
   const handleCopy = async () => {
     if (ocrText) {
-      await navigator.clipboard.writeText(ocrText)
+      try {
+        await executeAction('copy', ocrText)
+        await navigator.clipboard.writeText(ocrText)
+      } catch (error) {
+        console.error('Copy failed:', error)
+      }
     }
   }
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (ocrText) {
-      window.open(`https://www.google.com/search?q=${encodeURIComponent(ocrText)}`, '_blank')
+      try {
+        const url = await executeAction('search', ocrText)
+        window.open(url, '_blank')
+      } catch (error) {
+        console.error('Search failed:', error)
+      }
+    }
+  }
+
+  const handleReverseImage = async () => {
+    try {
+      const url = await executeAction('reverse_image', '', imagePath)
+      window.open(url, '_blank')
+    } catch (error) {
+      console.error('Reverse image search failed:', error)
     }
   }
 
@@ -42,8 +62,8 @@ function ResultPanel({ imagePath, ocrText, onOcrTextChange, onNewCapture }: Resu
     if (!aiPrompt) return
     setIsLoading(true)
     try {
-      const response = await askAi(aiPrompt, imagePath)
-      setAiResponse(response)
+      const result = await askAi(aiPrompt, imagePath)
+      setAiResponse(result.content)
     } catch (error) {
       console.error('AI request failed:', error)
     } finally {
@@ -55,8 +75,9 @@ function ResultPanel({ imagePath, ocrText, onOcrTextChange, onNewCapture }: Resu
     if (!ocrText) return
     setIsLoading(true)
     try {
-      const response = await askAi(`Translate this text to English: ${ocrText}`, imagePath)
-      setAiResponse(response)
+      const prompt = await executeAction('translate', ocrText)
+      const result = await askAi(prompt, imagePath)
+      setAiResponse(result.content)
     } catch (error) {
       console.error('Translation failed:', error)
     } finally {
@@ -79,6 +100,9 @@ function ResultPanel({ imagePath, ocrText, onOcrTextChange, onNewCapture }: Resu
         </button>
         <button onClick={handleSearch} disabled={!ocrText}>
           Search Text
+        </button>
+        <button onClick={handleReverseImage}>
+          Reverse Image Search
         </button>
         <button onClick={handleTranslate} disabled={!ocrText || isLoading}>
           Translate

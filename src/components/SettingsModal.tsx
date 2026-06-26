@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { getConfig, saveConfig } from '../services/config'
 
 interface SettingsModalProps {
   onClose: () => void
@@ -10,10 +11,50 @@ function SettingsModal({ onClose }: SettingsModalProps) {
   const [model, setModel] = useState('gpt-4o')
   const [ocrLanguage, setOcrLanguage] = useState('eng')
   const [hotkey, setHotkey] = useState('Ctrl+Shift+C')
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    loadConfig()
+  }, [])
+
+  const loadConfig = async () => {
+    try {
+      const config = await getConfig()
+      setApiEndpoint(config.api_endpoint)
+      setApiKey(config.api_key)
+      setModel(config.model)
+      setOcrLanguage(config.ocr_language)
+      setHotkey(config.hotkey)
+    } catch (error) {
+      console.error('Failed to load config:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleSave = async () => {
-    console.log('Settings saved:', { apiEndpoint, apiKey, model, ocrLanguage, hotkey })
-    onClose()
+    try {
+      await saveConfig({
+        api_endpoint: apiEndpoint,
+        api_key: apiKey,
+        model,
+        ocr_language: ocrLanguage,
+        hotkey,
+      })
+      onClose()
+    } catch (error) {
+      console.error('Failed to save config:', error)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="modal-overlay">
+        <div className="modal">
+          <p>Loading settings...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -10,8 +10,8 @@ function CaptureOverlay({ onComplete, onCancel }: CaptureOverlayProps) {
   useEffect(() => {
     const doCapture = async () => {
       try {
-        const imagePath = await captureRegion()
-        onComplete(imagePath)
+        const result = await captureRegion()
+        onComplete(result.image_path)
       } catch (error) {
         console.error('Capture failed:', error)
         onCancel()
