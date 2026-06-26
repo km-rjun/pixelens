@@ -8,7 +8,7 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::actions::get_handler;
 use crate::capture::{check_tools as check_capture_tools, detect_backend};
 use crate::config::Config;
-use crate::ocr::{check_tools as check_ocr_tools, create_engine};
+use crate::ocr::{check_tools as check_ocr_tools, clean_ocr_output, create_engine};
 
 use super::protocol::{Request, Response};
 use super::IpcError;
@@ -175,7 +175,11 @@ async fn handle_request(request: Request) -> Response {
             language,
         } => match create_engine() {
             Ok(engine) => match engine.perform_ocr(&image_path, &language) {
-                Ok(result) => Response::OcrResult(result),
+                Ok(result) => {
+                    let mut r = result;
+                    r.text = clean_ocr_output(&r.text);
+                    Response::OcrResult(r)
+                }
                 Err(e) => Response::Error(e.to_string()),
             },
             Err(e) => Response::Error(e.to_string()),
@@ -240,7 +244,7 @@ async fn handle_grab(search: bool, ai: Option<String>) -> Response {
     };
 
     let extracted_text = match ocr_result {
-        Ok(r) => Some(r.text),
+        Ok(r) => Some(clean_ocr_output(&r.text)),
         Err(e) => {
             log::warn!("OCR failed: {}", e);
             None
@@ -336,5 +340,31 @@ mod tests {
         assert!(url.contains("google.com"));
         assert!(url.contains("rust"));
         assert!(url.contains("programming"));
+    }
+}
+
+#[cfg(test)]
+mod ocr_cleanup_integration {
+    use crate::ocr::clean_ocr_output;
+
+    #[test]
+    fn test_ocr_cleanup_applied_before_response() {
+        let raw = "Join us now to add more\n\n\n\nknowledge and share it with the world!";
+        let cleaned = clean_ocr_output(raw);
+        assert_eq!(
+            cleaned,
+            "Join us now to add more\n\nknowledge and share it with the world!"
+        );
+        assert!(
+            !cleaned.contains("\n\n\n"),
+            "Excessive blank lines should be collapsed"
+        );
+    }
+
+    #[test]
+    fn test_ocr_cleanup_preserves_paragraph_breaks() {
+        let raw = "Paragraph one.\n\nParagraph two.";
+        let cleaned = clean_ocr_output(raw);
+        assert_eq!(cleaned, "Paragraph one.\n\nParagraph two.");
     }
 }
