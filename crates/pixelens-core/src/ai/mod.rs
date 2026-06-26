@@ -325,3 +325,57 @@ mod tests {
         }
     }
 }
+
+    #[test]
+    fn test_build_request_with_image() {
+        let tmp = std::env::temp_dir().join("pixelens_test_img.png");
+        std::fs::write(&tmp, b"fake png data").unwrap();
+
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "What is in this image?".to_string(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+
+        let chat_request = client.build_request(&request);
+        assert_eq!(chat_request.model, "gpt-4o");
+        assert_eq!(chat_request.messages.len(), 1);
+
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["type"], "image_url");
+        assert!(arr[0]["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+        assert_eq!(arr[1]["type"], "text");
+        assert_eq!(arr[1]["text"], "What is in this image?");
+
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_build_request_image_missing_file() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "Describe this".to_string(),
+            image_path: Some("/tmp/nonexistent_file_12345.png".to_string()),
+        };
+
+        let chat_request = client.build_request(&request);
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 1, "Missing image should fall back to text only");
+        assert_eq!(arr[0]["type"], "text");
+    }

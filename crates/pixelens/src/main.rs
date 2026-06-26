@@ -118,9 +118,9 @@ async fn main() {
 async fn do_grab() -> Result<(String, Option<String>), i32> {
     let client = IpcClient::new();
     match client.grab(false, None).await {
-        Ok((_image_path, text, _ai_response)) => {
+        Ok((image_path, text, _ai_response)) => {
             if let Some(t) = &text {
-                Ok((t.clone(), Some(t.clone())))
+                Ok((t.clone(), Some(image_path)))
             } else {
                 eprintln!("No text extracted from capture");
                 Err(1)
@@ -143,7 +143,7 @@ async fn do_grab() -> Result<(String, Option<String>), i32> {
 }
 
 async fn cmd_grab() -> i32 {
-    let (text, _) = match do_grab().await {
+    let (text, image_path) = match do_grab().await {
         Ok(v) => v,
         Err(code) => return code,
     };
@@ -218,7 +218,7 @@ async fn cmd_grab() -> i32 {
             match client
                 .send(pixelens_core::ipc::protocol::Request::Ai {
                     prompt,
-                    image_path: None,
+                    image_path: image_path.clone(),
                 })
                 .await
             {
