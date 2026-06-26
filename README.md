@@ -7,6 +7,7 @@ A Linux-native visual search and OCR utility.
 ### Implemented
 - **Screen Capture**: Select any region of your screen using grim/slurp
 - **OCR**: Extract text from captured images using Tesseract
+- **Clipboard**: Copy extracted text to clipboard via wl-copy
 - **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
 - **Actions**: Copy text, web search, reverse image search, translate
 - **CLI**: Full command-line interface with all user-facing commands
@@ -14,29 +15,21 @@ A Linux-native visual search and OCR utility.
 - **IPC**: Unix domain socket communication between CLI and daemon
 - **Configuration**: JSON-based config with environment variable support
 
-### Partial
-- **Hotkey Support**: Hotkey parsing implemented, global capture trigger pending
-
 ### Planned
-- **Global Hotkeys**: System-wide capture trigger (requires compositor integration)
-- **Clipboard Integration**: Direct clipboard write for copy action
-- **Browser Integration**: Open URLs in default browser for search results
+- **Browser Integration**: Open search URLs in default browser via xdg-open
+- **X11 Support**: Capture backend for non-Wayland systems
 
 ## Architecture
 
 ```
 pixelens/
 ├── crates/
-│   ├── pixelens-common/     # Shared types and errors
-│   ├── pixelens-config/     # Configuration management
-│   ├── pixelens-capture/    # Screen capture (grim/slurp)
-│   ├── pixelens-ocr/        # OCR (Tesseract)
-│   ├── pixelens-actions/    # Action handlers and AI client
-│   ├── pixelens-ipc/        # IPC layer (Unix domain sockets)
-│   ├── pixelens-hotkey/     # Hotkey parsing and matching
-│   ├── pixelens-cli/        # CLI binary (pixelens)
-│   └── pixelensd/           # Daemon binary (pixelensd)
-└── docs/
+│   ├── pixelens/           # CLI binary
+│   ├── pixelensd/          # Daemon binary
+│   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, hotkey)
+├── docs/
+├── Cargo.toml              # Workspace root
+└── README.md
 ```
 
 ## Requirements
@@ -45,17 +38,18 @@ pixelens/
 - grim (Wayland screenshot tool)
 - slurp (Wayland region selector)
 - tesseract-ocr
+- wl-clipboard (for `wl-copy`)
 
 ## Installation
 
 ```bash
-cargo install --path crates/pixelens-cli
+cargo install --path crates/pixelens
 ```
 
 ## Usage
 
 ```bash
-# Capture a region and show extracted text
+# Capture a region and show extracted text (copies to clipboard)
 pixelens grab
 
 # Capture and search the web
