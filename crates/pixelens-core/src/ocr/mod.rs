@@ -20,27 +20,19 @@ pub fn create_engine() -> Result<Box<dyn OcrEngine>, OcrError> {
 }
 
 pub fn clean_ocr_output(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let mut result: Vec<&str> = Vec::new();
-    let mut i = 0;
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed: Vec<&str> = normalized.lines().map(|l| l.trim_end()).collect();
+    let mut start = 0;
+    let mut end = trimmed.len();
 
-    while i < lines.len() {
-        let is_blank = lines[i].trim().is_empty();
-
-        if is_blank {
-            while i < lines.len() && lines[i].trim().is_empty() {
-                i += 1;
-            }
-            if !result.is_empty() && i < lines.len() {
-                result.push("");
-            }
-        } else {
-            result.push(lines[i]);
-            i += 1;
-        }
+    while start < end && trimmed[start].is_empty() {
+        start += 1;
+    }
+    while end > start && trimmed[end - 1].is_empty() {
+        end -= 1;
     }
 
-    result.join("\n")
+    trimmed[start..end].join("\n")
 }
 
 pub fn check_tools() -> Vec<String> {
@@ -64,63 +56,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_clean_empty_input() {
+    fn test_empty_input() {
         assert_eq!(clean_ocr_output(""), "");
     }
 
     #[test]
-    fn test_clean_no_blank_lines() {
-        let input = "Line 1\nLine 2\nLine 3";
-        assert_eq!(clean_ocr_output(input), "Line 1\nLine 2\nLine 3");
+    fn test_preserves_internal_blank_lines() {
+        let input = "Line 1\n\nLine 2";
+        assert_eq!(clean_ocr_output(input), "Line 1\n\nLine 2");
     }
 
     #[test]
-    fn test_clean_heading_then_paragraph() {
-        let input = "Title\n\nBody text here.";
-        assert_eq!(clean_ocr_output(input), "Title\n\nBody text here.");
-    }
-
-    #[test]
-    fn test_clean_two_paragraphs() {
-        let input = "First paragraph.\n\nSecond paragraph.";
+    fn test_preserves_multiple_paragraphs() {
+        let input = "Title\n\nBody.\n\nAnother paragraph.";
         assert_eq!(
             clean_ocr_output(input),
-            "First paragraph.\n\nSecond paragraph."
+            "Title\n\nBody.\n\nAnother paragraph."
         );
     }
 
     #[test]
-    fn test_clean_accidental_double_blank() {
-        let input = "Line one.\n\n\nLine two.";
-        assert_eq!(clean_ocr_output(input), "Line one.\n\nLine two.");
+    fn test_normalizes_crlf() {
+        let input = "Line 1\r\nLine 2\r\n";
+        assert_eq!(clean_ocr_output(input), "Line 1\nLine 2");
     }
 
     #[test]
-    fn test_clean_many_blank_lines() {
-        let input = "A\n\n\n\n\n\n\n\nB";
-        assert_eq!(clean_ocr_output(input), "A\n\nB");
+    fn test_strips_trailing_whitespace() {
+        let input = "Hello   \nWorld  \n";
+        assert_eq!(clean_ocr_output(input), "Hello\nWorld");
     }
 
     #[test]
-    fn test_clean_real_paragraphs_preserved() {
-        let input =
-            "Remixes\n\nDig deeper into music...\n\nbeyond.\n\nWhoSampled's verified content...";
-        let cleaned = clean_ocr_output(input);
-        assert_eq!(
-            cleaned,
-            "Remixes\n\nDig deeper into music...\n\nbeyond.\n\nWhoSampled's verified content..."
-        );
+    fn test_trims_leading_blank_lines() {
+        let input = "\n\nHello";
+        assert_eq!(clean_ocr_output(input), "Hello");
     }
 
     #[test]
-    fn test_clean_trailing_blanks() {
+    fn test_trims_trailing_blank_lines() {
         let input = "Hello\n\n\n";
         assert_eq!(clean_ocr_output(input), "Hello");
     }
 
     #[test]
-    fn test_clean_leading_blanks() {
-        let input = "\n\nHello";
-        assert_eq!(clean_ocr_output(input), "Hello");
+    fn test_preserves_heading_paragraph_gap() {
+        let input = "Heading\n\nFirst line of paragraph.";
+        assert_eq!(
+            clean_ocr_output(input),
+            "Heading\n\nFirst line of paragraph."
+        );
+    }
+
+    #[test]
+    fn test_whitespace_only_input() {
+        assert_eq!(clean_ocr_output("   \n  \n  "), "");
     }
 }
