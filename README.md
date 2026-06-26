@@ -4,20 +4,15 @@ A Linux-native visual search and OCR utility.
 
 ## Features
 
-### Implemented
 - **Screen Capture**: Select any region of your screen using grim/slurp
 - **OCR**: Extract text from captured images using Tesseract
 - **Clipboard**: Copy extracted text to clipboard via wl-copy
 - **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
-- **Actions**: Copy text, web search, reverse image search, translate
-- **CLI**: Full command-line interface with all user-facing commands
+- **Browser**: Open search results in default browser
+- **CLI**: Selection-first commands for all operations
 - **Daemon**: Background service for handling capture and processing
 - **IPC**: Unix domain socket communication between CLI and daemon
 - **Configuration**: JSON-based config with environment variable support
-
-### Planned
-- **Browser Integration**: Open search URLs in default browser via xdg-open
-- **X11 Support**: Capture backend for non-Wayland systems
 
 ## Architecture
 
@@ -48,30 +43,28 @@ cargo install --path crates/pixelens
 
 ## Usage
 
+All commands select a screen region first, then act on the captured content.
+
 ```bash
-# Capture a region and show extracted text (copies to clipboard)
+# Select a region, OCR it, and print the text
 pixelens grab
 
-# Capture and search the web
-pixelens grab --search
+# Select a region, OCR it, copy text to clipboard
+pixelens copy
 
-# Capture and ask AI
-pixelens grab --ai "What is this?"
+# Select a region, OCR it, search the web
+pixelens search
 
-# Copy text to clipboard
-pixelens copy "Hello World"
+# Select a region, OCR it, ask AI about it
+pixelens ai
+pixelens ai --prompt "What is happening here?"
 
-# Search the web
-pixelens search "rust programming"
+# Select a region, OCR it, translate the text
+pixelens translate --to Spanish
+pixelens translate --to French
 
-# Ask AI about text
-pixelens ai "Explain this code"
-
-# Translate text
-pixelens translate "Hello" --to Spanish
-
-# Reverse image search
-pixelens image screenshot.png
+# Select a region, perform reverse image search
+pixelens image
 
 # Start the daemon
 pixelens daemon
@@ -142,10 +135,10 @@ Since global hotkeys are not reliably supported across Wayland compositors, Pixe
 Add to `~/.config/hypr/hyprland.conf`:
 
 ```
-# Pixelens capture
 bind = SUPER SHIFT, S, exec, pixelens grab
-bind = SUPER SHIFT, A, exec, pixelens grab --ai "What is this?"
-bind = SUPER SHIFT, F, exec, pixelens grab --search
+bind = SUPER SHIFT, C, exec, pixelens copy
+bind = SUPER SHIFT, F, exec, pixelens search
+bind = SUPER SHIFT, A, exec, pixelens ai
 ```
 
 ### Niri
@@ -155,8 +148,9 @@ Add to `~/.config/niri/config.kdl`:
 ```kdl
 binds {
     Mod+Shift+S { spawn "pixelens" "grab"; }
-    Mod+Shift+A { spawn "pixelens" "grab" "--ai" "What is this?"; }
-    Mod+Shift+F { spawn "pixelens" "grab" "--search"; }
+    Mod+Shift+C { spawn "pixelens" "copy"; }
+    Mod+Shift+F { spawn "pixelens" "search"; }
+    Mod+Shift+A { spawn "pixelens" "ai"; }
 }
 ```
 
@@ -165,8 +159,8 @@ binds {
 Add to `~/.config/sway/config`:
 
 ```
-# Pixelens capture
 bindsym $mod+Shift+s exec pixelens grab
-bindsym $mod+Shift+a exec pixelens grab --ai "What is this?"
-bindsym $mod+Shift+f exec pixelens grab --search
+bindsym $mod+Shift+c exec pixelens copy
+bindsym $mod+Shift+f exec pixelens search
+bindsym $mod+Shift+a exec pixelens ai
 ```

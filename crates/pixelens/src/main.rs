@@ -3,6 +3,7 @@ use std::process;
 
 use pixelens_core::config::Config;
 use pixelens_core::ipc::client::IpcClient;
+use pixelens_core::ipc::protocol::Request;
 use pixelens_core::types::ActionType;
 
 #[derive(Parser)]
@@ -16,54 +17,31 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Capture a region and show extracted text
-    Grab {
-        /// Search the web for extracted text
-        #[arg(long)]
-        search: bool,
+    /// Select a region, OCR it, and print the extracted text
+    Grab,
 
-        /// Ask AI about the captured region
-        #[arg(long)]
-        ai: Option<String>,
-    },
+    /// Select a region, OCR it, copy text to clipboard
+    Copy,
 
-    /// Copy text to clipboard
-    Copy {
-        /// Text to copy
-        text: String,
-    },
+    /// Select a region, OCR it, search the web for the text
+    Search,
 
-    /// Search the web for text
-    Search {
-        /// Text to search
-        text: String,
-    },
-
-    /// Ask AI about text or an image
+    /// Select a region, OCR it, send to AI
     Ai {
-        /// Prompt to send to AI
-        prompt: String,
-
-        /// Optional image path
+        /// Optional prompt or question about the selection
         #[arg(long)]
-        image: Option<String>,
+        prompt: Option<String>,
     },
 
-    /// Translate text
+    /// Select a region, OCR it, translate the text
     Translate {
-        /// Text to translate
-        text: String,
-
         /// Target language (default: English)
         #[arg(long, default_value = "English")]
         to: String,
     },
 
-    /// Reverse image search
-    Image {
-        /// Image path
-        path: String,
-    },
+    /// Select a region, perform reverse image search
+    Image,
 
     /// Start the daemon
     Daemon,
@@ -104,12 +82,12 @@ async fn main() {
     let cli = Cli::parse();
 
     let exit_code = match cli.command {
-        Commands::Grab { search, ai } => cmd_grab(search, ai.as_deref()).await,
-        Commands::Copy { text } => cmd_copy(&text).await,
-        Commands::Search { text } => cmd_search(&text).await,
-        Commands::Ai { prompt, image } => cmd_ai(&prompt, image.as_deref()).await,
-        Commands::Translate { text, to } => cmd_translate(&text, &to).await,
-        Commands::Image { path } => cmd_image(&path).await,
+        Commands::Grab => cmd_grab().await,
+        Commands::Copy => cmd_copy().await,
+        Commands::Search => cmd_search().await,
+        Commands::Ai { prompt } => cmd_ai(prompt.as_deref()).await,
+        Commands::Translate { to } => cmd_translate(&to).await,
+        Commands::Image => cmd_image().await,
         Commands::Daemon => cmd_daemon().await,
         Commands::Status => cmd_status().await,
         Commands::Stop => cmd_stop().await,
@@ -128,40 +106,58 @@ async fn main() {
     process::exit(exit_code);
 }
 
-async fn cmd_grab(search: bool, ai: Option<&str>) -> i32 {
+async fn do_grab() -> Result<(String, Option<String>), i32> {
     let client = IpcClient::new();
-    match client.grab(search, ai).await {
-        Ok((_image_path, text, ai_response)) => {
+    match client.grab(false, None).await {
+        Ok((_image_path, text, _ai_response)) => {
             if let Some(t) = &text {
-                println!("{}", t);
+                Ok((t.clone(), Some(t.clone())))
             } else {
                 eprintln!("No text extracted from capture");
+                Err(1)
             }
-            if let Some(a) = &ai_response {
-                println!("{}", a);
-            }
-            0
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
             eprintln!("Daemon not running. Start with: pixelens daemon");
-            1
+            Err(1)
         }
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("cancelled") {
                 eprintln!("Capture cancelled");
             } else {
-                eprintln!("Grab failed: {}", msg);
+                eprintln!("Capture failed: {}", msg);
             }
-            1
+            Err(1)
         }
     }
 }
 
-async fn cmd_copy(text: &str) -> i32 {
+async fn cmd_grab() -> i32 {
+    match do_grab().await {
+        Ok((text, _)) => {
+            println!("{}", text);
+            0
+        }
+        Err(code) => code,
+    }
+}
+
+async fn cmd_copy() -> i32 {
+    let (text, _) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
     let client = IpcClient::new();
-    match client.action(ActionType::CopyToClipboard, text, None).await {
-        Ok(_) => 0,
+    match client
+        .action(ActionType::CopyToClipboard, &text, None)
+        .await
+    {
+        Ok(_) => {
+            eprintln!("Copied to clipboard");
+            0
+        }
         Err(e) => {
             eprintln!("Copy failed: {}", e);
             1
@@ -169,9 +165,14 @@ async fn cmd_copy(text: &str) -> i32 {
     }
 }
 
-async fn cmd_search(text: &str) -> i32 {
+async fn cmd_search() -> i32 {
+    let (text, _) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
     let client = IpcClient::new();
-    match client.action(ActionType::SearchWeb, text, None).await {
+    match client.action(ActionType::SearchWeb, &text, None).await {
         Ok(url) => {
             println!("{}", url);
             0
@@ -183,12 +184,36 @@ async fn cmd_search(text: &str) -> i32 {
     }
 }
 
-async fn cmd_ai(prompt: &str, image: Option<&str>) -> i32 {
+async fn cmd_ai(prompt: Option<&str>) -> i32 {
+    let (ocr_text, _) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let final_prompt = match prompt {
+        Some(p) => format!("{}\n\nText from screen:\n{}", p, ocr_text),
+        None => format!("Describe or explain the following text:\n\n{}", ocr_text),
+    };
+
     let client = IpcClient::new();
-    match client.ai(prompt, image).await {
-        Ok((content, _)) => {
+    match client
+        .send(Request::Ai {
+            prompt: final_prompt,
+            image_path: None,
+        })
+        .await
+    {
+        Ok(pixelens_core::ipc::protocol::Response::AiResult { content, .. }) => {
             println!("{}", content);
             0
+        }
+        Ok(pixelens_core::ipc::protocol::Response::Error(e)) => {
+            eprintln!("AI error: {}", e);
+            1
+        }
+        Ok(_) => {
+            eprintln!("Unexpected response from daemon");
+            1
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
             eprintln!("Daemon not running. Start with: pixelens daemon");
@@ -201,41 +226,77 @@ async fn cmd_ai(prompt: &str, image: Option<&str>) -> i32 {
     }
 }
 
-async fn cmd_translate(text: &str, to: &str) -> i32 {
+async fn cmd_translate(to: &str) -> i32 {
+    let (ocr_text, _) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let prompt = format!(
+        "Translate the following text to {}. Return only the translation:\n\n{}",
+        to, ocr_text
+    );
+
     let client = IpcClient::new();
     match client
-        .action(ActionType::Translate(to.to_string()), text, None)
+        .send(Request::Ai {
+            prompt,
+            image_path: None,
+        })
         .await
     {
-        Ok(prompt) => match client.ai(&prompt, None).await {
-            Ok((content, _)) => {
-                println!("{}", content);
-                0
-            }
-            Err(e) => {
-                eprintln!("Translation failed: {}", e);
-                1
-            }
-        },
+        Ok(pixelens_core::ipc::protocol::Response::AiResult { content, .. }) => {
+            println!("{}", content);
+            0
+        }
+        Ok(pixelens_core::ipc::protocol::Response::Error(e)) => {
+            eprintln!("Translation error: {}", e);
+            1
+        }
+        Ok(_) => {
+            eprintln!("Unexpected response from daemon");
+            1
+        }
+        Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
+            eprintln!("Daemon not running. Start with: pixelens daemon");
+            1
+        }
         Err(e) => {
-            eprintln!("Translate failed: {}", e);
+            eprintln!("Translation failed: {}", e);
             1
         }
     }
 }
 
-async fn cmd_image(path: &str) -> i32 {
+async fn cmd_image() -> i32 {
     let client = IpcClient::new();
-    match client
-        .action(ActionType::ReverseImageSearch, "", Some(path))
-        .await
-    {
-        Ok(url) => {
-            println!("{}", url);
-            0
+    match client.grab(false, None).await {
+        Ok((image_path, _text, _ai)) => {
+            match client
+                .action(ActionType::ReverseImageSearch, "", Some(&image_path))
+                .await
+            {
+                Ok(url) => {
+                    println!("{}", url);
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Image search failed: {}", e);
+                    1
+                }
+            }
+        }
+        Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
+            eprintln!("Daemon not running. Start with: pixelens daemon");
+            1
         }
         Err(e) => {
-            eprintln!("Image search failed: {}", e);
+            let msg = e.to_string();
+            if msg.contains("cancelled") {
+                eprintln!("Capture cancelled");
+            } else {
+                eprintln!("Capture failed: {}", msg);
+            }
             1
         }
     }

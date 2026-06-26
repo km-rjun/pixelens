@@ -30,7 +30,7 @@ fn test_grab_help() {
         .args(["grab", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Capture a region"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn test_copy_help() {
         .args(["copy", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Copy text to clipboard"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn test_search_help() {
         .args(["search", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Search the web"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_ai_help() {
         .args(["ai", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Ask AI about text"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn test_translate_help() {
         .args(["translate", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Translate text"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_image_help() {
         .args(["image", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Reverse image search"));
+        .stdout(predicate::str::contains("Select a region"));
 }
 
 #[test]
@@ -134,10 +134,50 @@ fn test_grab_fails_without_daemon() {
 }
 
 #[test]
+fn test_copy_fails_without_daemon() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .arg("copy")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Daemon not running"));
+}
+
+#[test]
+fn test_search_fails_without_daemon() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .arg("search")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Daemon not running"));
+}
+
+#[test]
 fn test_ai_fails_without_daemon() {
     Command::cargo_bin("pixelens")
         .unwrap()
-        .args(["ai", "test prompt"])
+        .arg("ai")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Daemon not running"));
+}
+
+#[test]
+fn test_translate_fails_without_daemon() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .args(["translate", "--to", "Spanish"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Daemon not running"));
+}
+
+#[test]
+fn test_image_fails_without_daemon() {
+    Command::cargo_bin("pixelens")
+        .unwrap()
+        .arg("image")
         .assert()
         .failure()
         .stderr(predicate::str::contains("Daemon not running"));
