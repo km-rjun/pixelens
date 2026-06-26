@@ -86,4 +86,13 @@ mod tests {
         let result = create_backend("unknown");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_copy_never_maps_to_search() {
+        let copy_result = MenuChoice::from_key("c");
+        let search_result = MenuChoice::from_key("s");
+        assert_eq!(copy_result, Some(MenuChoice::Copy));
+        assert_eq!(search_result, Some(MenuChoice::Search));
+        assert_ne!(copy_result, search_result);
+    }
 }
