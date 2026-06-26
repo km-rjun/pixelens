@@ -6,10 +6,10 @@ A Linux-native visual search and OCR utility.
 
 - **Screen Capture**: Select any region of your screen using grim/slurp
 - **OCR**: Extract text from captured images using Tesseract
+- **Action Menu**: After capture, choose copy, search, AI, or translate
 - **Clipboard**: Copy extracted text to clipboard via wl-copy
 - **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
 - **Browser**: Open search results in default browser
-- **Reverse Image Search**: Not yet implemented
 - **CLI**: Selection-first commands for all operations
 - **Daemon**: Background service for handling capture and processing
 - **IPC**: Unix domain socket communication between CLI and daemon
@@ -22,7 +22,7 @@ pixelens/
 ├── crates/
 │   ├── pixelens/           # CLI binary
 │   ├── pixelensd/          # Daemon binary (single source of truth)
-│   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, hotkey)
+│   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, menu)
 ├── docs/
 ├── Cargo.toml              # Workspace root
 └── README.md
@@ -35,6 +35,7 @@ pixelens/
 - slurp (Wayland region selector)
 - tesseract-ocr
 - wl-clipboard (for `wl-copy`)
+- Menu backend: fuzzel, wofi, or stdin fallback
 
 ## Installation
 
@@ -48,7 +49,7 @@ cargo install --path crates/pixelensd
 All commands select a screen region first, then act on the captured content.
 
 ```bash
-# Select a region, OCR it, and print the text
+# Select a region, OCR it, and choose an action from the menu
 pixelens grab
 
 # Select a region, OCR it, copy text to clipboard
@@ -64,9 +65,6 @@ pixelens ai --prompt "What is happening here?"
 # Select a region, OCR it, translate the text
 pixelens translate --to Spanish
 pixelens translate --to French
-
-# Select a region, perform reverse image search
-pixelens image
 
 # Start the daemon
 pixelens daemon start
@@ -96,9 +94,20 @@ Configuration is stored at `~/.config/pixelens/config.json`:
   "api_endpoint": "https://api.openai.com/v1",
   "model": "gpt-4o",
   "ocr_language": "eng",
-  "hotkey": "Ctrl+Shift+C"
+  "hotkey": "Ctrl+Shift+C",
+  "menu_backend": "auto"
 }
 ```
+
+### Menu Backends
+
+The action menu uses one of these backends (auto-detected by default):
+
+- **fuzzel** - Wayland-native launcher (recommended)
+- **wofi** - Wayland application launcher
+- **stdin** - Terminal fallback for non-GUI environments
+
+Set `menu_backend` in config to force a specific backend.
 
 ### API Key
 

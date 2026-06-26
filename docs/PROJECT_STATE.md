@@ -8,7 +8,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 
 - `pixelens`: user-facing CLI and daemon controller
 - `pixelensd`: background daemon
-- `pixelens-core`: capture, OCR, actions, configuration, IPC, and shared logic
+- `pixelens-core`: capture, OCR, actions, configuration, IPC, menu, and shared logic
 
 ## Current Working Functionality
 
@@ -17,11 +17,12 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - OCR through Tesseract
 - CLI-to-daemon IPC over Unix domain sockets
 - Clean capture cancellation
-- `pixelens grab` returning OCR text, then showing action menu
+- `pixelens grab` showing action menu after OCR
 - `pixelens copy` copying OCR text via `wl-copy`
 - `pixelens search` returning search URL
 - `pixelens ai` sending text to configured AI provider
 - `pixelens translate` translating OCR text
+- Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
 - CI passing on GitHub Actions
 
@@ -31,7 +32,7 @@ All commands are selection-first. Typed positional text is not the normal input 
 
 | Command | Behavior |
 |---------|----------|
-| `pixelens grab` | Select region, OCR, show text, then action menu |
+| `pixelens grab` | Select region, OCR, show action menu |
 | `pixelens copy` | Select region, OCR, copy to clipboard |
 | `pixelens search` | Select region, OCR, return search URL |
 | `pixelens ai` | Select region, OCR, send to AI (optional `--prompt`) |
@@ -42,6 +43,22 @@ All commands are selection-first. Typed positional text is not the normal input 
 | `pixelens daemon stop` | Graceful shutdown via IPC |
 | `pixelens config` | Show or set configuration |
 
+## Menu System
+
+`pixelens grab` shows a menu after OCR with keyboard shortcuts:
+- `[C] Copy` - Copy text to clipboard
+- `[S] Search` - Search the web
+- `[A] Ask AI` - Send to AI
+- `[T] Translate` - Translate text
+- `[Esc] Cancel` - Exit without action
+
+Supported backends (auto-detected or configured):
+- `fuzzel` - Wayland-native launcher
+- `wofi` - Wayland application launcher
+- `stdin` - Fallback for terminal/non-GUI environments
+
+Configure via `menu_backend` in config (default: "auto").
+
 ## Known Limitations
 
 - Reverse-image search incomplete (returns "not implemented")
@@ -51,7 +68,7 @@ All commands are selection-first. Typed positional text is not the normal input 
 
 ## Next Milestone
 
-Implement clipboard integration for the copy action and verify the full workflow.
+Implement clipboard integration verification and polish the action menu UX.
 
 ## Non-Goals for Next Milestone
 
