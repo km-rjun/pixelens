@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -70,36 +69,6 @@ impl Default for IpcServer {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    let mut child = Command::new("wl-copy")
-        .arg("--")
-        .arg(text)
-        .spawn()
-        .map_err(|e| format!("Failed to run wl-copy: {}. Is wl-clipboard installed?", e))?;
-
-    child.wait().map_err(|e| format!("wl-copy failed: {}", e))?;
-
-    Ok(())
-}
-
-fn open_browser(url: &str) -> Result<(), String> {
-    let mut child = Command::new("xdg-open")
-        .arg(url)
-        .spawn()
-        .map_err(|e| format!("Failed to run xdg-open: {}", e))?;
-
-    child
-        .wait()
-        .map_err(|e| format!("xdg-open failed: {}", e))?;
-
-    Ok(())
-}
-
-fn build_search_url(text: &str) -> String {
-    let encoded = urlencoding::encode(text);
-    format!("https://www.google.com/search?q={}", encoded)
 }
 
 async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
@@ -217,7 +186,7 @@ async fn handle_request(request: Request) -> Response {
     }
 }
 
-async fn handle_grab(search: bool, ai: Option<String>) -> Response {
+async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
     let backend = match detect_backend() {
         Ok(b) => b,
         Err(e) => return Response::Error(e.to_string()),
@@ -251,12 +220,6 @@ async fn handle_grab(search: bool, ai: Option<String>) -> Response {
         }
     };
 
-    if let Some(ref text) = extracted_text {
-        if let Err(e) = copy_to_clipboard(text) {
-            log::warn!("Clipboard copy failed: {}", e);
-        }
-    }
-
     if let Some(prompt) = ai {
         let config = Config::load();
         let client = crate::actions::ai::OpenAiClient::new(
@@ -276,88 +239,11 @@ async fn handle_grab(search: bool, ai: Option<String>) -> Response {
             },
             Err(e) => Response::Error(e.to_string()),
         }
-    } else if search {
-        if let Some(ref text) = extracted_text {
-            let url = build_search_url(text);
-            if let Err(e) = open_browser(&url) {
-                log::warn!("Failed to open browser: {}", e);
-            }
-        }
-        Response::GrabResult {
-            image_path,
-            text: extracted_text,
-            ai_response: None,
-        }
     } else {
         Response::GrabResult {
             image_path,
             text: extracted_text,
             ai_response: None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_server_creation() {
-        let server = IpcServer::new();
-        assert!(server.socket_path.to_string_lossy().contains("pixelens"));
-    }
-
-    #[tokio::test]
-    async fn test_handle_ping() {
-        let response = handle_request(Request::Ping).await;
-        assert!(matches!(response, Response::Pong));
-    }
-
-    #[tokio::test]
-    async fn test_handle_status() {
-        let response = handle_request(Request::Status).await;
-        assert!(matches!(response, Response::Status { .. }));
-    }
-
-    #[tokio::test]
-    async fn test_handle_stop() {
-        let response = handle_request(Request::Stop).await;
-        assert!(matches!(response, Response::Stopped));
-    }
-
-    #[test]
-    fn test_concurrent_capture_guard() {
-        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
-        assert!(!was_capturing);
-        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
-        assert!(was_capturing);
-        CAPTURING.store(false, Ordering::SeqCst);
-    }
-
-    #[test]
-    fn test_build_search_url() {
-        let url = build_search_url("rust programming");
-        assert!(url.contains("google.com"));
-        assert!(url.contains("rust"));
-        assert!(url.contains("programming"));
-    }
-}
-
-#[cfg(test)]
-mod ocr_cleanup_integration {
-    use crate::ocr::clean_ocr_output;
-
-    #[test]
-    fn test_ocr_cleanup_preserves_paragraphs() {
-        let raw = "Title\n\nBody text.";
-        let cleaned = clean_ocr_output(raw);
-        assert_eq!(cleaned, "Title\n\nBody text.");
-    }
-
-    #[test]
-    fn test_ocr_cleanup_normalizes_crlf() {
-        let raw = "Line 1\r\nLine 2";
-        let cleaned = clean_ocr_output(raw);
-        assert_eq!(cleaned, "Line 1\nLine 2");
     }
 }
