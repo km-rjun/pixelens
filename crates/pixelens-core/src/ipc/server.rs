@@ -84,6 +84,24 @@ fn copy_to_clipboard(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn open_browser(url: &str) -> Result<(), String> {
+    let mut child = Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map_err(|e| format!("Failed to run xdg-open: {}", e))?;
+
+    child
+        .wait()
+        .map_err(|e| format!("xdg-open failed: {}", e))?;
+
+    Ok(())
+}
+
+fn build_search_url(text: &str) -> String {
+    let encoded = urlencoding::encode(text);
+    format!("https://www.google.com/search?q={}", encoded)
+}
+
 async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
     let (reader, mut writer) = stream.into_split();
     let reader = BufReader::new(reader);
@@ -256,30 +274,15 @@ async fn handle_grab(search: bool, ai: Option<String>) -> Response {
         }
     } else if search {
         if let Some(ref text) = extracted_text {
-            let config = Config::load();
-            let client = crate::actions::ai::OpenAiClient::new(
-                config.api_endpoint,
-                config.api_key,
-                config.model.clone(),
-            );
-            let ai_request = crate::types::AiRequest {
-                prompt: format!("Search the web for: {}", text),
-                image_path: Some(image_path.clone()),
-            };
-            match client.chat(&ai_request) {
-                Ok(response) => Response::GrabResult {
-                    image_path,
-                    text: extracted_text,
-                    ai_response: Some(response.content),
-                },
-                Err(e) => Response::Error(e.to_string()),
+            let url = build_search_url(text);
+            if let Err(e) = open_browser(&url) {
+                log::warn!("Failed to open browser: {}", e);
             }
-        } else {
-            Response::GrabResult {
-                image_path,
-                text: None,
-                ai_response: None,
-            }
+        }
+        Response::GrabResult {
+            image_path,
+            text: extracted_text,
+            ai_response: None,
         }
     } else {
         Response::GrabResult {
@@ -325,5 +328,13 @@ mod tests {
         let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
         assert!(was_capturing);
         CAPTURING.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_build_search_url() {
+        let url = build_search_url("rust programming");
+        assert!(url.contains("google.com"));
+        assert!(url.contains("rust"));
+        assert!(url.contains("programming"));
     }
 }
