@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +50,58 @@ pub struct ActionPayload {
 pub enum ActionType {
     CopyToClipboard,
     SearchWeb,
+    ReverseImageSearch,
     AskAi(String),
     Translate(String),
+}
+
+impl FromStr for ActionType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "copy" | "clipboard" => Ok(ActionType::CopyToClipboard),
+            "search" | "google" => Ok(ActionType::SearchWeb),
+            "reverse_image" | "reverse" => Ok(ActionType::ReverseImageSearch),
+            "translate" => Ok(ActionType::Translate("English".to_string())),
+            _ => Err(format!("Unknown action: {}", s)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_action_type_from_str() {
+        assert!(matches!(
+            "copy".parse::<ActionType>().unwrap(),
+            ActionType::CopyToClipboard
+        ));
+        assert!(matches!(
+            "search".parse::<ActionType>().unwrap(),
+            ActionType::SearchWeb
+        ));
+        assert!(matches!(
+            "reverse_image".parse::<ActionType>().unwrap(),
+            ActionType::ReverseImageSearch
+        ));
+        assert!(matches!(
+            "translate".parse::<ActionType>().unwrap(),
+            ActionType::Translate(_)
+        ));
+        assert!("invalid".parse::<ActionType>().is_err());
+    }
+
+    #[test]
+    fn test_capture_region_to_grim_geometry() {
+        let region = CaptureRegion {
+            x: 100,
+            y: 200,
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(region.to_grim_geometry(), "800x600+100+200");
+    }
 }

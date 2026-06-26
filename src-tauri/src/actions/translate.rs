@@ -19,3 +19,44 @@ impl ActionHandler for TranslateHandler {
         ActionType::Translate(self.target_lang.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_translate_handler() {
+        let handler = TranslateHandler {
+            target_lang: "Spanish".to_string(),
+        };
+        let payload = ActionPayload {
+            text: "Hello".to_string(),
+            image_path: None,
+        };
+        let result = handler.execute(&payload).unwrap();
+        assert!(result.contains("Spanish"));
+        assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn test_translate_handler_different_lang() {
+        let handler = TranslateHandler {
+            target_lang: "Japanese".to_string(),
+        };
+        let payload = ActionPayload {
+            text: "Good morning".to_string(),
+            image_path: None,
+        };
+        let result = handler.execute(&payload).unwrap();
+        assert!(result.contains("Japanese"));
+        assert!(result.contains("Good morning"));
+    }
+
+    #[test]
+    fn test_action_type() {
+        let handler = TranslateHandler {
+            target_lang: "French".to_string(),
+        };
+        assert!(matches!(handler.action_type(), ActionType::Translate(_)));
+    }
+}
