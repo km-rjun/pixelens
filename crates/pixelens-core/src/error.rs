@@ -51,6 +51,9 @@ pub enum AiError {
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
 
-    #[error("Unauthorized - check API key")]
-    Unauthorized,
+    #[error("Authentication failed for {endpoint}: API key is missing, invalid, or rejected. Set PIXELENS_API_KEY environment variable or configure api_key in {config_path}")]
+    Unauthorized {
+        endpoint: String,
+        config_path: String,
+    },
 }

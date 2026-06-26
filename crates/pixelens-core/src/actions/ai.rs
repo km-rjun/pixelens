@@ -2,6 +2,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+use crate::config::Config;
 use crate::error::AiError;
 use crate::types::{AiRequest, AiResponse};
 
@@ -45,6 +46,25 @@ impl OpenAiClient {
             api_key,
             model,
         }
+    }
+
+    pub fn from_config(config: &Config) -> Self {
+        Self {
+            endpoint: config.api_endpoint.clone(),
+            api_key: config.api_key.clone(),
+            model: config.model.clone(),
+        }
+    }
+
+    fn validate_api_key(&self) -> Result<(), AiError> {
+        if self.api_key.is_empty() {
+            let config_path = Config::config_path().to_string_lossy().to_string();
+            return Err(AiError::Unauthorized {
+                endpoint: self.endpoint.clone(),
+                config_path,
+            });
+        }
+        Ok(())
     }
 
     fn build_request(&self, request: &AiRequest) -> ChatRequest {
@@ -95,6 +115,8 @@ impl OpenAiClient {
     }
 
     pub fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
+        self.validate_api_key()?;
+
         let chat_request = self.build_request(request);
 
         let url = format!("{}/chat/completions", self.endpoint);
@@ -102,7 +124,18 @@ impl OpenAiClient {
             .header("Authorization", &format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .send_json(&chat_request)
-            .map_err(|e| AiError::RequestFailed(format!("{}", e)))?;
+            .map_err(|e| {
+                let msg = format!("{}", e);
+                if msg.contains("401") || msg.contains("Unauthorized") {
+                    let config_path = Config::config_path().to_string_lossy().to_string();
+                    AiError::Unauthorized {
+                        endpoint: self.endpoint.clone(),
+                        config_path,
+                    }
+                } else {
+                    AiError::RequestFailed(msg)
+                }
+            })?;
 
         let body = response
             .into_body()
@@ -125,6 +158,23 @@ mod tests {
             "gpt-4o".to_string(),
         );
         assert_eq!(client.model, "gpt-4o");
+    }
+
+    #[test]
+    fn test_empty_api_key_rejected() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            String::new(),
+            "gpt-4o".to_string(),
+        );
+        let request = AiRequest {
+            prompt: "test".to_string(),
+            image_path: None,
+        };
+        let result = client.chat(&request);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("API key is missing"));
     }
 
     #[test]
@@ -190,7 +240,7 @@ mod tests {
         let client = OpenAiClient::new(
             "https://api.openai.com/v1".to_string(),
             "test-key".to_string(),
-            "gpt-4o".to_string(),
+            "gpt-40".to_string(),
         );
 
         let result = client.parse_response("not json");
