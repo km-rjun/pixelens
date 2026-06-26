@@ -1,4 +1,5 @@
 pub mod wayland;
+pub mod x11;
 
 use crate::error::CaptureError;
 use crate::types::{CaptureRegion, CaptureResult};
@@ -10,24 +11,42 @@ pub trait ScreenCapture {
 }
 
 pub fn detect_backend() -> Result<Box<dyn ScreenCapture>, CaptureError> {
-    let backend = wayland::WaylandCapture;
-    if backend.is_available() {
-        Ok(Box::new(backend))
-    } else {
-        Err(CaptureError::ToolNotFound(
-            "No supported capture backend found (grim/slurp)".to_string(),
-        ))
+    let wayland = wayland::WaylandCapture;
+    if wayland.is_available() {
+        return Ok(Box::new(wayland));
     }
+
+    let x11 = x11::X11Capture;
+    if x11.is_available() {
+        return Ok(Box::new(x11));
+    }
+
+    Err(CaptureError::ToolNotFound(
+        "No supported capture backend found (Wayland: grim/slurp, X11: scrot/slop)".to_string(),
+    ))
 }
 
 pub fn check_tools() -> Vec<String> {
     let mut missing = Vec::new();
-    if !tool_exists("slurp") {
-        missing.push("slurp".to_string());
+
+    let wayland_available = tool_exists("slurp") && tool_exists("grim");
+    let x11_available = tool_exists("slop") && tool_exists("scrot");
+
+    if !wayland_available && !x11_available {
+        if !tool_exists("slurp") {
+            missing.push("slurp".to_string());
+        }
+        if !tool_exists("grim") {
+            missing.push("grim".to_string());
+        }
+        if !tool_exists("slop") {
+            missing.push("slop".to_string());
+        }
+        if !tool_exists("scrot") {
+            missing.push("scrot".to_string());
+        }
     }
-    if !tool_exists("grim") {
-        missing.push("grim".to_string());
-    }
+
     missing
 }
 
@@ -54,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires grim and slurp installed"]
+    #[ignore = "requires capture tools installed"]
     fn test_check_tools_all_present() {
         let missing = check_tools();
         assert!(missing.is_empty(), "Missing tools: {:?}", missing);
