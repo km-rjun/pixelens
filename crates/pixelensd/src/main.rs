@@ -1,5 +1,5 @@
-use pixelens_config::Config;
-use pixelens_ipc::server::IpcServer;
+use pixelens_core::config::Config;
+use pixelens_core::ipc::server::IpcServer;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
