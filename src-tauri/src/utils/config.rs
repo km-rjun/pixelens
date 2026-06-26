@@ -28,7 +28,7 @@ impl Config {
         let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
         config_dir.join("pixelens").join("config.json")
     }
-    
+
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
@@ -38,12 +38,24 @@ impl Config {
             Self::default()
         }
     }
-    
+
     pub fn save(&self) -> Result<(), String> {
         let path = Self::config_path();
         let parent = path.parent().unwrap();
-        fs::create_dir_all(parent).map_err(|e| format!("Failed to create config directory: {}", e))?;
-        let data = serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize config: {}", e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+        let data = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
         fs::write(&path, data).map_err(|e| format!("Failed to write config: {}", e))
     }
+}
+
+#[tauri::command]
+pub fn get_config() -> Config {
+    Config::load()
+}
+
+#[tauri::command]
+pub fn save_config(config: Config) -> Result<(), String> {
+    config.save()
 }

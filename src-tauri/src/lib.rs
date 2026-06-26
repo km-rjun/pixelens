@@ -18,6 +18,8 @@ pub fn run() {
             commands::capture::capture_region,
             commands::ocr::perform_ocr,
             commands::ai::ask_ai,
+            utils::config::get_config,
+            utils::config::save_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
