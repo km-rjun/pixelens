@@ -1,10 +1,16 @@
+pub mod provider_error;
+
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::thread;
+use std::time::Duration;
 
 use crate::config::Config;
-use crate::error::AiError;
+use crate::error::{AiError, RateLimitKind};
 use crate::types::{AiRequest, AiResponse};
+
+use provider_error::{parse_429_response, parse_retry_after};
 
 #[derive(Serialize)]
 struct Message {
@@ -32,6 +38,9 @@ struct Choice {
 struct ResponseMessage {
     content: String,
 }
+
+const MAX_RETRIES: u32 = 3;
+const BASE_DELAY_MS: u64 = 1000;
 
 pub struct OpenAiClient {
     endpoint: String,
@@ -114,16 +123,12 @@ impl OpenAiClient {
         })
     }
 
-    pub fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
-        self.validate_api_key()?;
-
-        let chat_request = self.build_request(request);
-
+    fn do_request(&self, chat_request: &ChatRequest) -> Result<String, AiError> {
         let url = format!("{}/chat/completions", self.endpoint);
         let response = ureq::post(&url)
             .header("Authorization", &format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .send_json(&chat_request)
+            .send_json(chat_request)
             .map_err(|e| {
                 let msg = format!("{}", e);
                 if msg.contains("401") || msg.contains("Unauthorized") {
@@ -132,18 +137,79 @@ impl OpenAiClient {
                         endpoint: self.endpoint.clone(),
                         config_path,
                     }
+                } else if msg.contains("429") {
+                    AiError::RateLimited {
+                        kind: RateLimitKind::Temporary {
+                            retry_after_secs: None,
+                        },
+                    }
                 } else {
                     AiError::RequestFailed(msg)
                 }
             })?;
+
+        let status = response.status();
+        let retry_after = response
+            .headers()
+            .get("retry-after")
+            .and_then(|h| h.to_str().ok())
+            .and_then(parse_retry_after);
 
         let body = response
             .into_body()
             .read_to_string()
             .map_err(|e| AiError::RequestFailed(format!("Read response: {}", e)))?;
 
-        self.parse_response(&body)
+        if status == 429 {
+            let kind = parse_429_response(&body);
+            let kind = match kind {
+                RateLimitKind::Temporary { .. } => RateLimitKind::Temporary {
+                    retry_after_secs: retry_after,
+                },
+                other => other,
+            };
+            return Err(AiError::RateLimited { kind });
+        }
+
+        Ok(body)
     }
+
+    pub fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
+        self.validate_api_key()?;
+
+        let chat_request = self.build_request(request);
+        let mut attempts = 0;
+
+        loop {
+            attempts += 1;
+            match self.do_request(&chat_request) {
+                Ok(body) => return self.parse_response(&body),
+                Err(AiError::RateLimited { kind }) => {
+                    if kind == RateLimitKind::QuotaExhausted || attempts >= MAX_RETRIES {
+                        return Err(AiError::RateLimited { kind });
+                    }
+                    let delay = match &kind {
+                        RateLimitKind::Temporary {
+                            retry_after_secs: Some(secs),
+                        } => Duration::from_secs(*secs),
+                        _ => {
+                            let base = BASE_DELAY_MS * 2u64.pow(attempts - 1);
+                            let jitter = rand_delay(base);
+                            Duration::from_millis(jitter)
+                        }
+                    };
+                    thread::sleep(delay);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+fn rand_delay(base_ms: u64) -> u64 {
+    let jitter = (base_ms as f64 * 0.2) as u64;
+    let offset = (base_ms / 5).min(jitter);
+    base_ms - offset + (fastrand::u64(0..offset * 2 + 1))
 }
 
 #[cfg(test)]
@@ -245,5 +311,17 @@ mod tests {
 
         let result = client.parse_response("not json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rand_delay_bounds() {
+        for _ in 0..100 {
+            let delay = rand_delay(1000);
+            assert!(
+                (800..=1200).contains(&delay),
+                "delay out of range: {}",
+                delay
+            );
+        }
     }
 }

@@ -28,3 +28,4 @@ base64 = "0.22"
 urlencoding = "2.1"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+fastrand = "2"

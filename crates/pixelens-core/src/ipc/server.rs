@@ -155,7 +155,7 @@ async fn handle_request(request: Request) -> Response {
         },
         Request::Ai { prompt, image_path } => {
             let config = Config::load();
-            let client = crate::actions::ai::OpenAiClient::new(
+            let client = crate::ai::OpenAiClient::new(
                 config.api_endpoint,
                 config.api_key,
                 config.model.clone(),
@@ -222,11 +222,8 @@ async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
 
     if let Some(prompt) = ai {
         let config = Config::load();
-        let client = crate::actions::ai::OpenAiClient::new(
-            config.api_endpoint,
-            config.api_key,
-            config.model.clone(),
-        );
+        let client =
+            crate::ai::OpenAiClient::new(config.api_endpoint, config.api_key, config.model.clone());
         let ai_request = crate::types::AiRequest {
             prompt,
             image_path: Some(image_path.clone()),

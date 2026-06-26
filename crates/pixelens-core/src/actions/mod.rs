@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod copy;
 pub mod reverse_image;
 pub mod search;

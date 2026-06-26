@@ -43,6 +43,27 @@ pub enum OcrError {
     InvalidImage(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum RateLimitKind {
+    Temporary { retry_after_secs: Option<u64> },
+    QuotaExhausted,
+}
+
+impl std::fmt::Display for RateLimitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Temporary { retry_after_secs } => match retry_after_secs {
+                Some(secs) => write!(f, "Rate limited. Retry after {} seconds", secs),
+                None => write!(f, "Rate limited. Retry later"),
+            },
+            Self::QuotaExhausted => write!(
+                f,
+                "Quota or usage limit reached. Check billing at your provider"
+            ),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AiError {
     #[error("Request failed: {0}")]
@@ -56,4 +77,10 @@ pub enum AiError {
         endpoint: String,
         config_path: String,
     },
+
+    #[error("Rate limit: {kind}")]
+    RateLimited { kind: RateLimitKind },
+
+    #[error("Retry exhausted after {attempts} attempts")]
+    RetryExhausted { attempts: u32 },
 }
