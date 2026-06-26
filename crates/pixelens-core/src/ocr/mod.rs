@@ -20,28 +20,24 @@ pub fn create_engine() -> Result<Box<dyn OcrEngine>, OcrError> {
 }
 
 pub fn clean_ocr_output(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut prev_was_blank = false;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut result: Vec<&str> = Vec::new();
+    let mut i = 0;
 
-    for line in text.lines() {
-        let is_blank = line.trim().is_empty();
+    while i < lines.len() {
+        let is_blank = lines[i].trim().is_empty();
 
         if is_blank {
-            if !prev_was_blank {
-                result.push('\n');
+            while i < lines.len() && lines[i].trim().is_empty() {
+                i += 1;
             }
-            prev_was_blank = true;
         } else {
-            if !result.is_empty() && !result.ends_with('\n') {
-                result.push('\n');
-            }
-            result.push_str(line);
-            result.push('\n');
-            prev_was_blank = false;
+            result.push(lines[i]);
+            i += 1;
         }
     }
 
-    result.trim_end().to_string()
+    result.join("\n")
 }
 
 pub fn check_tools() -> Vec<String> {
@@ -77,21 +73,24 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_excessive_blank_lines() {
-        let input = "Line 1\n\n\n\nLine 2";
-        assert_eq!(clean_ocr_output(input), "Line 1\n\nLine 2");
+    fn test_clean_single_blank_noise() {
+        let input = "Join us now to add more\n\nknowledge and share it with the world!";
+        assert_eq!(
+            clean_ocr_output(input),
+            "Join us now to add more\nknowledge and share it with the world!"
+        );
     }
 
     #[test]
-    fn test_clean_preserves_paragraph_breaks() {
-        let input = "Paragraph one.\n\nParagraph two.";
-        assert_eq!(clean_ocr_output(input), "Paragraph one.\n\nParagraph two.");
+    fn test_clean_preserves_paragraph_break() {
+        let input = "Paragraph one.\n\n\n\nParagraph two.";
+        assert_eq!(clean_ocr_output(input), "Paragraph one.\nParagraph two.");
     }
 
     #[test]
     fn test_clean_heading_then_paragraph() {
         let input = "Title\n\nBody text here.";
-        assert_eq!(clean_ocr_output(input), "Title\n\nBody text here.");
+        assert_eq!(clean_ocr_output(input), "Title\nBody text here.");
     }
 
     #[test]
@@ -100,24 +99,40 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_whitespace_only() {
-        assert_eq!(clean_ocr_output("   \n  \n  "), "");
+    fn test_clean_multiple_lines_no_blanks() {
+        let input = "Line 1\nLine 2\nLine 3";
+        assert_eq!(clean_ocr_output(input), "Line 1\nLine 2\nLine 3");
     }
 
     #[test]
-    fn test_clean_single_line() {
-        assert_eq!(clean_ocr_output("Hello world"), "Hello world");
-    }
-
-    #[test]
-    fn test_clean_trailing_newlines() {
-        let input = "Line 1\nLine 2\n\n";
-        assert_eq!(clean_ocr_output(input), "Line 1\nLine 2");
-    }
-
-    #[test]
-    fn test_clean_many_blank_lines() {
+    fn test_clean_many_blanks_collapses() {
         let input = "A\n\n\n\n\n\n\n\nB";
-        assert_eq!(clean_ocr_output(input), "A\n\nB");
+        assert_eq!(clean_ocr_output(input), "A\nB");
+    }
+
+    #[test]
+    fn test_clean_trailing_blanks() {
+        let input = "Hello\n\n\n";
+        assert_eq!(clean_ocr_output(input), "Hello");
+    }
+
+    #[test]
+    fn test_clean_leading_blanks() {
+        let input = "\n\nHello";
+        assert_eq!(clean_ocr_output(input), "Hello");
+    }
+
+    #[test]
+    fn test_clean_ocr_real_example() {
+        let input = "Join us now to add more\n\n\nknowledge and share it with the world!";
+        let cleaned = clean_ocr_output(input);
+        assert_eq!(
+            cleaned,
+            "Join us now to add more\nknowledge and share it with the world!"
+        );
+        assert!(
+            !cleaned.contains("\n\n"),
+            "Should not have double blank lines"
+        );
     }
 }

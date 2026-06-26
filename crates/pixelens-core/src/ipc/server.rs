@@ -353,18 +353,11 @@ mod ocr_cleanup_integration {
         let cleaned = clean_ocr_output(raw);
         assert_eq!(
             cleaned,
-            "Join us now to add more\n\nknowledge and share it with the world!"
+            "Join us now to add more\nknowledge and share it with the world!"
         );
         assert!(
-            !cleaned.contains("\n\n\n"),
-            "Excessive blank lines should be collapsed"
+            !cleaned.contains("\n\n"),
+            "Should have no blank lines between text"
         );
-    }
-
-    #[test]
-    fn test_ocr_cleanup_preserves_paragraph_breaks() {
-        let raw = "Paragraph one.\n\nParagraph two.";
-        let cleaned = clean_ocr_output(raw);
-        assert_eq!(cleaned, "Paragraph one.\n\nParagraph two.");
     }
 }
