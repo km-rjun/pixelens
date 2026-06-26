@@ -12,13 +12,13 @@ use crate::types::{AiRequest, AiResponse};
 
 use provider_error::{parse_429_response, parse_retry_after};
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct Message {
     role: String,
     content: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct ChatRequest {
     model: String,
     messages: Vec<Message>,
@@ -41,6 +41,24 @@ struct ResponseMessage {
 
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 1000;
+
+const VISION_MODELS: &[&str] = &[
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4-turbo",
+    "gpt-4-vision-preview",
+    "claude-3-opus",
+    "claude-3-sonnet",
+    "claude-3-haiku",
+    "claude-3-5-sonnet",
+    "llava",
+    "bakllava",
+];
+
+pub fn model_supports_vision(model: &str) -> bool {
+    let lower = model.to_lowercase();
+    VISION_MODELS.iter().any(|m| lower.contains(m))
+}
 
 pub struct OpenAiClient {
     endpoint: String,
@@ -76,10 +94,16 @@ impl OpenAiClient {
         Ok(())
     }
 
-    fn build_request(&self, request: &AiRequest) -> ChatRequest {
+    fn build_request(&self, request: &AiRequest) -> Result<ChatRequest, AiError> {
         let mut content = serde_json::Value::Array(vec![]);
 
         if let Some(ref path) = request.image_path {
+            if !model_supports_vision(&self.model) {
+                return Err(AiError::RequestFailed(format!(
+                    "Model '{}' does not support image input. Use a vision-capable model like gpt-4o, gpt-4-turbo, or claude-3-sonnet",
+                    self.model
+                )));
+            }
             if let Ok(image_data) = fs::read(path) {
                 let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_data);
                 let image_content = serde_json::json!({
@@ -89,6 +113,8 @@ impl OpenAiClient {
                     }
                 });
                 content.as_array_mut().unwrap().push(image_content);
+            } else {
+                log::warn!("Could not read image file: {}", path);
             }
         }
 
@@ -98,13 +124,13 @@ impl OpenAiClient {
         });
         content.as_array_mut().unwrap().push(text_content);
 
-        ChatRequest {
+        Ok(ChatRequest {
             model: self.model.clone(),
             messages: vec![Message {
                 role: "user".to_string(),
                 content,
             }],
-        }
+        })
     }
 
     fn parse_response(&self, body: &str) -> Result<AiResponse, AiError> {
@@ -177,7 +203,7 @@ impl OpenAiClient {
     pub fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
         self.validate_api_key()?;
 
-        let chat_request = self.build_request(request);
+        let chat_request = self.build_request(request)?;
         let mut attempts = 0;
 
         loop {
@@ -256,7 +282,7 @@ mod tests {
             image_path: None,
         };
 
-        let chat_request = client.build_request(&request);
+        let chat_request = client.build_request(&request).unwrap();
         assert_eq!(chat_request.model, "gpt-4o");
         assert_eq!(chat_request.messages.len(), 1);
 
@@ -265,6 +291,95 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["type"], "text");
         assert_eq!(arr[0]["text"], "Hello world");
+    }
+
+    #[test]
+    fn test_build_request_with_image() {
+        let tmp = std::env::temp_dir().join("pixelens_test_img.png");
+        std::fs::write(&tmp, b"fake png data").unwrap();
+
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "What is in this image?".to_string(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+
+        let chat_request = client.build_request(&request).unwrap();
+        assert_eq!(chat_request.model, "gpt-4o");
+        assert_eq!(chat_request.messages.len(), 1);
+
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["type"], "image_url");
+        assert!(arr[0]["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+        assert_eq!(arr[1]["type"], "text");
+        assert_eq!(arr[1]["text"], "What is in this image?");
+
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_build_request_image_missing_file() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-4o".to_string(),
+        );
+
+        let request = AiRequest {
+            prompt: "Describe this".to_string(),
+            image_path: Some("/tmp/nonexistent_file_12345.png".to_string()),
+        };
+
+        let chat_request = client.build_request(&request).unwrap();
+        let content = &chat_request.messages[0].content;
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 1, "Missing image should fall back to text only");
+        assert_eq!(arr[0]["type"], "text");
+    }
+
+    #[test]
+    fn test_image_rejected_for_non_vision_model() {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            "gpt-3.5-turbo".to_string(),
+        );
+
+        let tmp = std::env::temp_dir().join("pixelens_test_img2.png");
+        std::fs::write(&tmp, b"fake png data").unwrap();
+
+        let request = AiRequest {
+            prompt: "Describe this".to_string(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+
+        let result = client.build_request(&request);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("does not support image input"));
+
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_model_supports_vision() {
+        assert!(model_supports_vision("gpt-4o"));
+        assert!(model_supports_vision("gpt-4o-mini"));
+        assert!(model_supports_vision("gpt-4-turbo"));
+        assert!(model_supports_vision("claude-3-sonnet"));
+        assert!(model_supports_vision("llava-13b"));
+        assert!(!model_supports_vision("gpt-3.5-turbo"));
+        assert!(!model_supports_vision("text-davinci-003"));
     }
 
     #[test]
@@ -306,7 +421,7 @@ mod tests {
         let client = OpenAiClient::new(
             "https://api.openai.com/v1".to_string(),
             "test-key".to_string(),
-            "gpt-40".to_string(),
+            "gpt-4o".to_string(),
         );
 
         let result = client.parse_response("not json");
@@ -325,57 +440,3 @@ mod tests {
         }
     }
 }
-
-    #[test]
-    fn test_build_request_with_image() {
-        let tmp = std::env::temp_dir().join("pixelens_test_img.png");
-        std::fs::write(&tmp, b"fake png data").unwrap();
-
-        let client = OpenAiClient::new(
-            "https://api.openai.com/v1".to_string(),
-            "test-key".to_string(),
-            "gpt-4o".to_string(),
-        );
-
-        let request = AiRequest {
-            prompt: "What is in this image?".to_string(),
-            image_path: Some(tmp.to_string_lossy().to_string()),
-        };
-
-        let chat_request = client.build_request(&request);
-        assert_eq!(chat_request.model, "gpt-4o");
-        assert_eq!(chat_request.messages.len(), 1);
-
-        let content = &chat_request.messages[0].content;
-        let arr = content.as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert_eq!(arr[0]["type"], "image_url");
-        assert!(arr[0]["image_url"]["url"]
-            .as_str()
-            .unwrap()
-            .starts_with("data:image/png;base64,"));
-        assert_eq!(arr[1]["type"], "text");
-        assert_eq!(arr[1]["text"], "What is in this image?");
-
-        std::fs::remove_file(&tmp).ok();
-    }
-
-    #[test]
-    fn test_build_request_image_missing_file() {
-        let client = OpenAiClient::new(
-            "https://api.openai.com/v1".to_string(),
-            "test-key".to_string(),
-            "gpt-4o".to_string(),
-        );
-
-        let request = AiRequest {
-            prompt: "Describe this".to_string(),
-            image_path: Some("/tmp/nonexistent_file_12345.png".to_string()),
-        };
-
-        let chat_request = client.build_request(&request);
-        let content = &chat_request.messages[0].content;
-        let arr = content.as_array().unwrap();
-        assert_eq!(arr.len(), 1, "Missing image should fall back to text only");
-        assert_eq!(arr[0]["type"], "text");
-    }
