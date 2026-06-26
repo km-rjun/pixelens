@@ -3,7 +3,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    Capture,
+    Ping,
+    Status,
+    Stop,
+    CheckTools,
+    GetConfig,
+    Grab {
+        search: bool,
+        ai: Option<String>,
+    },
     Ocr {
         image_path: String,
         language: String,
@@ -17,13 +25,31 @@ pub enum Request {
         text: String,
         image_path: Option<String>,
     },
-    CheckTools,
-    GetConfig,
-    Ping,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
+    Pong,
+    Stopped,
+    Status {
+        running: bool,
+        capture_missing: Vec<String>,
+        ocr_missing: Vec<String>,
+    },
+    ToolsStatus {
+        capture_missing: Vec<String>,
+        ocr_missing: Vec<String>,
+    },
+    Config {
+        api_endpoint: String,
+        model: String,
+        ocr_language: String,
+    },
+    GrabResult {
+        image_path: String,
+        text: Option<String>,
+        ai_response: Option<String>,
+    },
     CaptureResult {
         image_path: String,
         region: CaptureRegion,
@@ -34,16 +60,6 @@ pub enum Response {
         model: String,
     },
     ActionResult(String),
-    ToolsStatus {
-        capture_missing: Vec<String>,
-        ocr_missing: Vec<String>,
-    },
-    Config {
-        api_endpoint: String,
-        model: String,
-        ocr_language: String,
-    },
-    Pong,
     Error(String),
 }
 
@@ -68,20 +84,25 @@ mod tests {
     }
 
     #[test]
-    fn test_capture_request() {
-        let request = Request::Capture;
+    fn test_grab_request() {
+        let request = Request::Grab {
+            search: false,
+            ai: Some("What is this?".to_string()),
+        };
         let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("Capture"));
+        assert!(json.contains("Grab"));
+        assert!(json.contains("What is this?"));
     }
 
     #[test]
-    fn test_ocr_request() {
-        let request = Request::Ocr {
-            image_path: "/tmp/test.png".to_string(),
-            language: "eng".to_string(),
+    fn test_status_response() {
+        let response = Response::Status {
+            running: true,
+            capture_missing: vec![],
+            ocr_missing: vec![],
         };
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("Ocr"));
-        assert!(json.contains("test.png"));
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("Status"));
+        assert!(json.contains("true"));
     }
 }

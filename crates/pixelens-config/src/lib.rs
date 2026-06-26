@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub api_endpoint: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub api_key: String,
     pub model: String,
     pub ocr_language: String,
@@ -33,19 +34,37 @@ impl Config {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
+        let mut config = if path.exists() {
             let data = fs::read_to_string(&path).unwrap_or_default();
             serde_json::from_str(&data).unwrap_or_default()
         } else {
             Self::default()
+        };
+
+        // Check environment variable for API key
+        if let Ok(env_key) = std::env::var("PIXELENS_API_KEY") {
+            config.api_key = env_key;
         }
+
+        config
+    }
+
+    pub fn api_key(&self) -> &str {
+        &self.api_key
     }
 
     pub fn save(&self) -> Result<(), PixelensError> {
         let path = Self::config_path();
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent)?;
-        let data = serde_json::to_string_pretty(self)?;
+
+        // Don't save API key to file if it came from environment
+        let mut save_config = self.clone();
+        if std::env::var("PIXELENS_API_KEY").is_ok() {
+            save_config.api_key = String::new();
+        }
+
+        let data = serde_json::to_string_pretty(&save_config)?;
         fs::write(&path, data)?;
         Ok(())
     }
@@ -61,5 +80,12 @@ mod tests {
         assert_eq!(config.api_endpoint, "https://api.openai.com/v1");
         assert_eq!(config.model, "gpt-4o");
         assert_eq!(config.ocr_language, "eng");
+    }
+
+    #[test]
+    fn test_config_path() {
+        let path = Config::config_path();
+        assert!(path.to_string_lossy().contains("pixelens"));
+        assert!(path.to_string_lossy().contains("config.json"));
     }
 }

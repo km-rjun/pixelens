@@ -1,11 +1,9 @@
 use clap::{Parser, Subcommand};
-use std::str::FromStr;
+use std::process;
 
-use pixelens_actions::get_action_names;
 use pixelens_common::ActionType;
 use pixelens_config::Config;
 use pixelens_ipc::client::IpcClient;
-use pixelens_ipc::protocol::{Request, Response};
 
 #[derive(Parser)]
 #[command(name = "pixelens")]
@@ -18,76 +16,85 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Capture a region of the screen
-    Capture,
+    /// Capture a region and show extracted text
+    Grab {
+        /// Search the web for extracted text
+        #[arg(long)]
+        search: bool,
 
-    /// Perform OCR on an image
-    Ocr {
-        /// Path to the image file
-        #[arg(short, long)]
-        image: String,
-
-        /// Language for OCR (default: eng)
-        #[arg(short, long, default_value = "eng")]
-        language: String,
+        /// Ask AI about the captured region
+        #[arg(long)]
+        ai: Option<String>,
     },
 
-    /// Ask AI about an image or text
+    /// Copy text to clipboard
+    Copy {
+        /// Text to copy
+        text: String,
+    },
+
+    /// Search the web for text
+    Search {
+        /// Text to search
+        text: String,
+    },
+
+    /// Ask AI about text or an image
     Ai {
         /// Prompt to send to AI
-        #[arg(short, long)]
         prompt: String,
 
         /// Optional image path
-        #[arg(short, long)]
+        #[arg(long)]
         image: Option<String>,
     },
 
-    /// Execute an action (copy, search, reverse_image, translate)
-    Action {
-        /// Action to execute
-        #[arg(short, long)]
-        name: String,
-
-        /// Text for the action
-        #[arg(short, long)]
+    /// Translate text
+    Translate {
+        /// Text to translate
         text: String,
 
-        /// Optional image path
-        #[arg(short, long)]
-        image: Option<String>,
+        /// Target language (default: English)
+        #[arg(long, default_value = "English")]
+        to: String,
     },
 
-    /// List available actions
-    Actions,
-
-    /// Check if required tools are installed
-    Check,
-
-    /// Show current configuration
-    Config,
-
-    /// Save configuration
-    SaveConfig {
-        /// API endpoint
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// API key
-        #[arg(short, long)]
-        key: Option<String>,
-
-        /// Model name
-        #[arg(short, long)]
-        model: Option<String>,
-
-        /// OCR language
-        #[arg(short, long)]
-        language: Option<String>,
+    /// Reverse image search
+    Image {
+        /// Image path
+        path: String,
     },
 
     /// Start the daemon
     Daemon,
+
+    /// Show daemon status
+    Status,
+
+    /// Stop the daemon
+    Stop,
+
+    /// Show or set configuration
+    Config {
+        /// Set API endpoint
+        #[arg(long)]
+        endpoint: Option<String>,
+
+        /// Set model
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Set OCR language
+        #[arg(long)]
+        language: Option<String>,
+
+        /// Set hotkey
+        #[arg(long)]
+        hotkey: Option<String>,
+    },
+
+    /// Show version information
+    Version,
 }
 
 #[tokio::main]
@@ -96,181 +103,257 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Capture => cmd_capture().await,
-        Commands::Ocr { image, language } => cmd_ocr(&image, &language).await,
+    let exit_code = match cli.command {
+        Commands::Grab { search, ai } => cmd_grab(search, ai.as_deref()).await,
+        Commands::Copy { text } => cmd_copy(&text).await,
+        Commands::Search { text } => cmd_search(&text).await,
         Commands::Ai { prompt, image } => cmd_ai(&prompt, image.as_deref()).await,
-        Commands::Action { name, text, image } => cmd_action(&name, &text, image.as_deref()).await,
-        Commands::Actions => cmd_actions(),
-        Commands::Check => cmd_check().await,
-        Commands::Config => cmd_config(),
-        Commands::SaveConfig {
+        Commands::Translate { text, to } => cmd_translate(&text, &to).await,
+        Commands::Image { path } => cmd_image(&path).await,
+        Commands::Daemon => cmd_daemon().await,
+        Commands::Status => cmd_status().await,
+        Commands::Stop => cmd_stop().await,
+        Commands::Config {
             endpoint,
-            key,
             model,
             language,
-        } => {
-            cmd_save_config(endpoint, key, model, language);
-        }
-        Commands::Daemon => cmd_daemon().await,
-    }
-}
-
-async fn cmd_capture() {
-    let client = IpcClient::new();
-    match client.send(Request::Capture).await {
-        Ok(Response::CaptureResult { image_path, .. }) => println!("{}", image_path),
-        Ok(Response::Error(e)) => eprintln!("Capture failed: {}", e),
-        Ok(_) => eprintln!("Unexpected response"),
-        Err(e) => eprintln!("IPC error: {}", e),
-    }
-}
-
-async fn cmd_ocr(image: &str, language: &str) {
-    let client = IpcClient::new();
-    match client
-        .send(Request::Ocr {
-            image_path: image.to_string(),
-            language: language.to_string(),
-        })
-        .await
-    {
-        Ok(Response::OcrResult(result)) => print!("{}", result.text),
-        Ok(Response::Error(e)) => eprintln!("OCR failed: {}", e),
-        Ok(_) => eprintln!("Unexpected response"),
-        Err(e) => eprintln!("IPC error: {}", e),
-    }
-}
-
-async fn cmd_ai(prompt: &str, image: Option<&str>) {
-    let client = IpcClient::new();
-    match client
-        .send(Request::Ai {
-            prompt: prompt.to_string(),
-            image_path: image.map(|s| s.to_string()),
-        })
-        .await
-    {
-        Ok(Response::AiResult { content, .. }) => println!("{}", content),
-        Ok(Response::Error(e)) => eprintln!("AI request failed: {}", e),
-        Ok(_) => eprintln!("Unexpected response"),
-        Err(e) => eprintln!("IPC error: {}", e),
-    }
-}
-
-async fn cmd_action(name: &str, text: &str, image: Option<&str>) {
-    let action_type = match ActionType::from_str(name) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Invalid action: {}", e);
-            return;
+            hotkey,
+        } => cmd_config(endpoint, model, language, hotkey),
+        Commands::Version => {
+            println!("pixelens {}", env!("CARGO_PKG_VERSION"));
+            0
         }
     };
 
+    process::exit(exit_code);
+}
+
+async fn cmd_grab(search: bool, ai: Option<&str>) -> i32 {
+    let client = IpcClient::new();
+    match client.grab(search, ai).await {
+        Ok((image_path, text, ai_response)) => {
+            println!("{}", image_path);
+            if let Some(t) = text {
+                println!("{}", t);
+            }
+            if let Some(a) = ai_response {
+                println!("{}", a);
+            }
+            0
+        }
+        Err(pixelens_ipc::IpcError::ConnectionFailed(_)) => {
+            eprintln!("Daemon not running. Start with: pixelens daemon");
+            1
+        }
+        Err(e) => {
+            eprintln!("Grab failed: {}", e);
+            1
+        }
+    }
+}
+
+async fn cmd_copy(text: &str) -> i32 {
+    let client = IpcClient::new();
+    match client.action(ActionType::CopyToClipboard, text, None).await {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("Copy failed: {}", e);
+            1
+        }
+    }
+}
+
+async fn cmd_search(text: &str) -> i32 {
+    let client = IpcClient::new();
+    match client.action(ActionType::SearchWeb, text, None).await {
+        Ok(url) => {
+            println!("{}", url);
+            0
+        }
+        Err(e) => {
+            eprintln!("Search failed: {}", e);
+            1
+        }
+    }
+}
+
+async fn cmd_ai(prompt: &str, image: Option<&str>) -> i32 {
+    let client = IpcClient::new();
+    match client.ai(prompt, image).await {
+        Ok((content, _)) => {
+            println!("{}", content);
+            0
+        }
+        Err(pixelens_ipc::IpcError::ConnectionFailed(_)) => {
+            eprintln!("Daemon not running. Start with: pixelens daemon");
+            1
+        }
+        Err(e) => {
+            eprintln!("AI request failed: {}", e);
+            1
+        }
+    }
+}
+
+async fn cmd_translate(text: &str, to: &str) -> i32 {
     let client = IpcClient::new();
     match client
-        .send(Request::Action {
-            action: action_type,
-            text: text.to_string(),
-            image_path: image.map(|s| s.to_string()),
-        })
+        .action(ActionType::Translate(to.to_string()), text, None)
         .await
     {
-        Ok(Response::ActionResult(result)) => println!("{}", result),
-        Ok(Response::Error(e)) => eprintln!("Action failed: {}", e),
-        Ok(_) => eprintln!("Unexpected response"),
-        Err(e) => eprintln!("IPC error: {}", e),
-    }
-}
-
-fn cmd_actions() {
-    for action in get_action_names() {
-        println!("{}", action);
-    }
-}
-
-async fn cmd_check() {
-    let client = IpcClient::new();
-    match client.send(Request::CheckTools).await {
-        Ok(Response::ToolsStatus {
-            capture_missing,
-            ocr_missing,
-        }) => {
-            if capture_missing.is_empty() && ocr_missing.is_empty() {
-                println!("All tools are installed");
-            } else {
-                if !capture_missing.is_empty() {
-                    eprintln!("Missing capture tools: {}", capture_missing.join(", "));
-                }
-                if !ocr_missing.is_empty() {
-                    eprintln!("Missing OCR tools: {}", ocr_missing.join(", "));
-                }
+        Ok(prompt) => match client.ai(&prompt, None).await {
+            Ok((content, _)) => {
+                println!("{}", content);
+                0
             }
-        }
-        Ok(Response::Error(e)) => eprintln!("Check failed: {}", e),
-        Ok(_) => eprintln!("Unexpected response"),
+            Err(e) => {
+                eprintln!("Translation failed: {}", e);
+                1
+            }
+        },
         Err(e) => {
-            if let pixelens_ipc::IpcError::ConnectionFailed(_) = e {
-                eprintln!("Daemon not running. Start with: pixelens daemon");
-            } else {
-                eprintln!("IPC error: {}", e);
-            }
+            eprintln!("Translate failed: {}", e);
+            1
         }
     }
 }
 
-fn cmd_config() {
-    let config = Config::load();
-    println!("Endpoint: {}", config.api_endpoint);
-    println!("Model: {}", config.model);
-    println!("OCR Language: {}", config.ocr_language);
-    println!("Hotkey: {}", config.hotkey);
-    if !config.api_key.is_empty() {
-        println!("API Key: ****");
+async fn cmd_image(path: &str) -> i32 {
+    let client = IpcClient::new();
+    match client
+        .action(ActionType::ReverseImageSearch, "", Some(path))
+        .await
+    {
+        Ok(url) => {
+            println!("{}", url);
+            0
+        }
+        Err(e) => {
+            eprintln!("Image search failed: {}", e);
+            1
+        }
     }
 }
 
-fn cmd_save_config(
-    endpoint: Option<String>,
-    key: Option<String>,
-    model: Option<String>,
-    language: Option<String>,
-) {
-    let mut config = Config::load();
-
-    if let Some(e) = endpoint {
-        config.api_endpoint = e;
-    }
-    if let Some(k) = key {
-        config.api_key = k;
-    }
-    if let Some(m) = model {
-        config.model = m;
-    }
-    if let Some(l) = language {
-        config.ocr_language = l;
-    }
-
-    match config.save() {
-        Ok(()) => println!("Configuration saved"),
-        Err(e) => eprintln!("Failed to save config: {}", e),
-    }
-}
-
-async fn cmd_daemon() {
+async fn cmd_daemon() -> i32 {
     let server = pixelens_ipc::server::IpcServer::new();
     log::info!("Starting Pixelens daemon...");
 
-    // Start signal handler
-    let server_clone = pixelens_ipc::server::IpcServer::new();
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+    let notify_clone = notify.clone();
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
         log::info!("Shutdown signal received");
+        notify_clone.notify_one();
+    });
+
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        notify.notified().await;
         server_clone.stop();
-        std::process::exit(0);
+        process::exit(0);
     });
 
     if let Err(e) = server.start().await {
         eprintln!("Daemon error: {}", e);
+        1
+    } else {
+        0
+    }
+}
+
+async fn cmd_status() -> i32 {
+    let client = IpcClient::new();
+    match client.status().await {
+        Ok((running, capture_missing, ocr_missing)) => {
+            if running {
+                println!("Daemon: running");
+            } else {
+                println!("Daemon: stopped");
+            }
+            if !capture_missing.is_empty() {
+                eprintln!("Missing capture tools: {}", capture_missing.join(", "));
+            }
+            if !ocr_missing.is_empty() {
+                eprintln!("Missing OCR tools: {}", ocr_missing.join(", "));
+            }
+            0
+        }
+        Err(pixelens_ipc::IpcError::ConnectionFailed(_)) => {
+            println!("Daemon: stopped");
+            0
+        }
+        Err(e) => {
+            eprintln!("Status check failed: {}", e);
+            1
+        }
+    }
+}
+
+async fn cmd_stop() -> i32 {
+    let client = IpcClient::new();
+    match client.stop().await {
+        Ok(()) => {
+            println!("Daemon stopped");
+            0
+        }
+        Err(pixelens_ipc::IpcError::ConnectionFailed(_)) => {
+            println!("Daemon was not running");
+            0
+        }
+        Err(e) => {
+            eprintln!("Stop failed: {}", e);
+            1
+        }
+    }
+}
+
+fn cmd_config(
+    endpoint: Option<String>,
+    model: Option<String>,
+    language: Option<String>,
+    hotkey: Option<String>,
+) -> i32 {
+    let mut config = Config::load();
+    let mut changed = false;
+
+    if let Some(e) = endpoint {
+        config.api_endpoint = e;
+        changed = true;
+    }
+    if let Some(m) = model {
+        config.model = m;
+        changed = true;
+    }
+    if let Some(l) = language {
+        config.ocr_language = l;
+        changed = true;
+    }
+    if let Some(h) = hotkey {
+        config.hotkey = h;
+        changed = true;
+    }
+
+    if changed {
+        match config.save() {
+            Ok(()) => {
+                println!("Configuration saved");
+                0
+            }
+            Err(e) => {
+                eprintln!("Failed to save config: {}", e);
+                1
+            }
+        }
+    } else {
+        println!("Endpoint: {}", config.api_endpoint);
+        println!("Model: {}", config.model);
+        println!("OCR Language: {}", config.ocr_language);
+        println!("Hotkey: {}", config.hotkey);
+        if !config.api_key.is_empty() {
+            println!("API Key: ****");
+        }
+        0
     }
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
 use pixelens_actions::get_handler;
@@ -11,6 +11,7 @@ use pixelens_ocr::{check_tools as check_ocr_tools, create_engine};
 use crate::protocol::{Request, Response};
 use crate::IpcError;
 
+#[derive(Clone)]
 pub struct IpcServer {
     socket_path: PathBuf,
 }
@@ -57,6 +58,7 @@ impl IpcServer {
         if self.socket_path.exists() {
             let _ = std::fs::remove_file(&self.socket_path);
         }
+        log::info!("IPC server stopped");
     }
 }
 
@@ -67,7 +69,8 @@ impl Default for IpcServer {
 }
 
 async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
-    let reader = BufReader::new(stream);
+    let (reader, mut writer) = stream.into_split();
+    let reader = BufReader::new(reader);
     let mut lines = reader.lines();
 
     while let Some(line) = lines
@@ -76,9 +79,16 @@ async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
         .map_err(|e| IpcError::ReadFailed(e.to_string()))?
     {
         let request: Request = serde_json::from_str(&line)?;
-        let _response = handle_request(request).await;
-        // Response would be sent back via the stream writer
-        // This is a simplified version - in production you'd split the stream
+        let response = handle_request(request).await;
+        let response_json = serde_json::to_string(&response)?;
+        writer
+            .write_all(response_json.as_bytes())
+            .await
+            .map_err(|e| IpcError::WriteFailed(e.to_string()))?;
+        writer
+            .write_all(b"\n")
+            .await
+            .map_err(|e| IpcError::WriteFailed(e.to_string()))?;
     }
 
     Ok(())
@@ -87,6 +97,19 @@ async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
 async fn handle_request(request: Request) -> Response {
     match request {
         Request::Ping => Response::Pong,
+        Request::Status => {
+            let capture_missing = check_capture_tools();
+            let ocr_missing = check_ocr_tools();
+            Response::Status {
+                running: true,
+                capture_missing,
+                ocr_missing,
+            }
+        }
+        Request::Stop => {
+            log::info!("Stop request received");
+            Response::Stopped
+        }
         Request::CheckTools => {
             let capture_missing = check_capture_tools();
             let ocr_missing = check_ocr_tools();
@@ -103,13 +126,70 @@ async fn handle_request(request: Request) -> Response {
                 ocr_language: config.ocr_language,
             }
         }
-        Request::Capture => match detect_backend() {
+        Request::Grab { search, ai } => match detect_backend() {
             Ok(backend) => match backend.select_region() {
                 Ok(region) => match backend.capture(&region) {
-                    Ok(result) => Response::CaptureResult {
-                        image_path: result.image_path,
-                        region: result.region,
-                    },
+                    Ok(result) => {
+                        let image_path = result.image_path.clone();
+
+                        if let Some(prompt) = ai {
+                            let config = Config::load();
+                            let client = pixelens_actions::ai::OpenAiClient::new(
+                                config.api_endpoint,
+                                config.api_key,
+                                config.model.clone(),
+                            );
+                            let ai_request = pixelens_common::AiRequest {
+                                prompt,
+                                image_path: Some(image_path.clone()),
+                            };
+                            match client.chat(&ai_request) {
+                                Ok(response) => Response::GrabResult {
+                                    image_path,
+                                    text: None,
+                                    ai_response: Some(response.content),
+                                },
+                                Err(e) => Response::Error(e.to_string()),
+                            }
+                        } else if search {
+                            let config = Config::load();
+                            let client = pixelens_actions::ai::OpenAiClient::new(
+                                config.api_endpoint,
+                                config.api_key,
+                                config.model.clone(),
+                            );
+                            let ocr_result = create_engine().and_then(|engine| {
+                                engine.perform_ocr(&image_path, &config.ocr_language)
+                            });
+                            match ocr_result {
+                                Ok(result) => {
+                                    let ai_request = pixelens_common::AiRequest {
+                                        prompt: format!("Search the web for: {}", result.text),
+                                        image_path: Some(image_path.clone()),
+                                    };
+                                    match client.chat(&ai_request) {
+                                        Ok(response) => Response::GrabResult {
+                                            image_path,
+                                            text: Some(result.text),
+                                            ai_response: Some(response.content),
+                                        },
+                                        Err(e) => Response::Error(e.to_string()),
+                                    }
+                                }
+                                Err(e) => Response::Error(e.to_string()),
+                            }
+                        } else {
+                            let config = Config::load();
+                            let text = create_engine().and_then(|engine| {
+                                engine.perform_ocr(&image_path, &config.ocr_language)
+                            });
+                            Response::GrabResult {
+                                image_path,
+                                text: text.ok().map(|r| r.text),
+                                ai_response: None,
+                            }
+                        }
+                    }
                     Err(e) => Response::Error(e.to_string()),
                 },
                 Err(e) => Response::Error(e.to_string()),
@@ -176,8 +256,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_check_tools() {
-        let response = handle_request(Request::CheckTools).await;
-        assert!(matches!(response, Response::ToolsStatus { .. }));
+    async fn test_handle_status() {
+        let response = handle_request(Request::Status).await;
+        assert!(matches!(response, Response::Status { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_handle_stop() {
+        let response = handle_request(Request::Stop).await;
+        assert!(matches!(response, Response::Stopped));
     }
 }

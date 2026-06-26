@@ -60,9 +60,43 @@ impl IpcClient {
         }
     }
 
-    pub async fn capture(&self) -> Result<(String, pixelens_common::CaptureRegion), IpcError> {
-        match self.send(Request::Capture).await? {
-            Response::CaptureResult { image_path, region } => Ok((image_path, region)),
+    pub async fn status(&self) -> Result<(bool, Vec<String>, Vec<String>), IpcError> {
+        match self.send(Request::Status).await? {
+            Response::Status {
+                running,
+                capture_missing,
+                ocr_missing,
+            } => Ok((running, capture_missing, ocr_missing)),
+            Response::Error(e) => Err(IpcError::ServerError(e)),
+            _ => Err(IpcError::InvalidResponse),
+        }
+    }
+
+    pub async fn stop(&self) -> Result<(), IpcError> {
+        match self.send(Request::Stop).await? {
+            Response::Stopped => Ok(()),
+            Response::Error(e) => Err(IpcError::ServerError(e)),
+            _ => Err(IpcError::InvalidResponse),
+        }
+    }
+
+    pub async fn grab(
+        &self,
+        search: bool,
+        ai: Option<&str>,
+    ) -> Result<(String, Option<String>, Option<String>), IpcError> {
+        match self
+            .send(Request::Grab {
+                search,
+                ai: ai.map(|s| s.to_string()),
+            })
+            .await?
+        {
+            Response::GrabResult {
+                image_path,
+                text,
+                ai_response,
+            } => Ok((image_path, text, ai_response)),
             Response::Error(e) => Err(IpcError::ServerError(e)),
             _ => Err(IpcError::InvalidResponse),
         }
