@@ -131,12 +131,13 @@ async fn main() {
 async fn cmd_grab(search: bool, ai: Option<&str>) -> i32 {
     let client = IpcClient::new();
     match client.grab(search, ai).await {
-        Ok((image_path, text, ai_response)) => {
-            println!("{}", image_path);
-            if let Some(t) = text {
+        Ok((_image_path, text, ai_response)) => {
+            if let Some(t) = &text {
                 println!("{}", t);
+            } else {
+                eprintln!("No text extracted from capture");
             }
-            if let Some(a) = ai_response {
+            if let Some(a) = &ai_response {
                 println!("{}", a);
             }
             0
@@ -146,7 +147,12 @@ async fn cmd_grab(search: bool, ai: Option<&str>) -> i32 {
             1
         }
         Err(e) => {
-            eprintln!("Grab failed: {}", e);
+            let msg = e.to_string();
+            if msg.contains("cancelled") {
+                eprintln!("Capture cancelled");
+            } else {
+                eprintln!("Grab failed: {}", msg);
+            }
             1
         }
     }

@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -10,6 +12,8 @@ use crate::ocr::{check_tools as check_ocr_tools, create_engine};
 
 use super::protocol::{Request, Response};
 use super::IpcError;
+
+static CAPTURING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone)]
 pub struct IpcServer {
@@ -66,6 +70,18 @@ impl Default for IpcServer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    let mut child = Command::new("wl-copy")
+        .arg("--")
+        .arg(text)
+        .spawn()
+        .map_err(|e| format!("Failed to run wl-copy: {}. Is wl-clipboard installed?", e))?;
+
+    child.wait().map_err(|e| format!("wl-copy failed: {}", e))?;
+
+    Ok(())
 }
 
 async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
@@ -126,76 +142,16 @@ async fn handle_request(request: Request) -> Response {
                 ocr_language: config.ocr_language,
             }
         }
-        Request::Grab { search, ai } => match detect_backend() {
-            Ok(backend) => match backend.select_region() {
-                Ok(region) => match backend.capture(&region) {
-                    Ok(result) => {
-                        let image_path = result.image_path.clone();
+        Request::Grab { search, ai } => {
+            if CAPTURING.swap(true, Ordering::SeqCst) {
+                return Response::Error("Capture already in progress".to_string());
+            }
 
-                        if let Some(prompt) = ai {
-                            let config = Config::load();
-                            let client = crate::actions::ai::OpenAiClient::new(
-                                config.api_endpoint,
-                                config.api_key,
-                                config.model.clone(),
-                            );
-                            let ai_request = crate::types::AiRequest {
-                                prompt,
-                                image_path: Some(image_path.clone()),
-                            };
-                            match client.chat(&ai_request) {
-                                Ok(response) => Response::GrabResult {
-                                    image_path,
-                                    text: None,
-                                    ai_response: Some(response.content),
-                                },
-                                Err(e) => Response::Error(e.to_string()),
-                            }
-                        } else if search {
-                            let config = Config::load();
-                            let client = crate::actions::ai::OpenAiClient::new(
-                                config.api_endpoint,
-                                config.api_key,
-                                config.model.clone(),
-                            );
-                            let ocr_result = create_engine().and_then(|engine| {
-                                engine.perform_ocr(&image_path, &config.ocr_language)
-                            });
-                            match ocr_result {
-                                Ok(result) => {
-                                    let ai_request = crate::types::AiRequest {
-                                        prompt: format!("Search the web for: {}", result.text),
-                                        image_path: Some(image_path.clone()),
-                                    };
-                                    match client.chat(&ai_request) {
-                                        Ok(response) => Response::GrabResult {
-                                            image_path,
-                                            text: Some(result.text),
-                                            ai_response: Some(response.content),
-                                        },
-                                        Err(e) => Response::Error(e.to_string()),
-                                    }
-                                }
-                                Err(e) => Response::Error(e.to_string()),
-                            }
-                        } else {
-                            let config = Config::load();
-                            let text = create_engine().and_then(|engine| {
-                                engine.perform_ocr(&image_path, &config.ocr_language)
-                            });
-                            Response::GrabResult {
-                                image_path,
-                                text: text.ok().map(|r| r.text),
-                                ai_response: None,
-                            }
-                        }
-                    }
-                    Err(e) => Response::Error(e.to_string()),
-                },
-                Err(e) => Response::Error(e.to_string()),
-            },
-            Err(e) => Response::Error(e.to_string()),
-        },
+            let result = handle_grab(search, ai).await;
+
+            CAPTURING.store(false, Ordering::SeqCst);
+            result
+        }
         Request::Ocr {
             image_path,
             language,
@@ -239,6 +195,101 @@ async fn handle_request(request: Request) -> Response {
     }
 }
 
+async fn handle_grab(search: bool, ai: Option<String>) -> Response {
+    let backend = match detect_backend() {
+        Ok(b) => b,
+        Err(e) => return Response::Error(e.to_string()),
+    };
+
+    let region = match backend.select_region() {
+        Ok(r) => r,
+        Err(crate::error::CaptureError::RegionCancelled) => {
+            return Response::Error("Region selection cancelled".to_string());
+        }
+        Err(e) => return Response::Error(e.to_string()),
+    };
+
+    let result = match backend.capture(&region) {
+        Ok(r) => r,
+        Err(e) => return Response::Error(e.to_string()),
+    };
+
+    let image_path = result.image_path.clone();
+
+    let ocr_result = {
+        let config = Config::load();
+        create_engine().and_then(|engine| engine.perform_ocr(&image_path, &config.ocr_language))
+    };
+
+    let extracted_text = match ocr_result {
+        Ok(r) => Some(r.text),
+        Err(e) => {
+            log::warn!("OCR failed: {}", e);
+            None
+        }
+    };
+
+    if let Some(ref text) = extracted_text {
+        if let Err(e) = copy_to_clipboard(text) {
+            log::warn!("Clipboard copy failed: {}", e);
+        }
+    }
+
+    if let Some(prompt) = ai {
+        let config = Config::load();
+        let client = crate::actions::ai::OpenAiClient::new(
+            config.api_endpoint,
+            config.api_key,
+            config.model.clone(),
+        );
+        let ai_request = crate::types::AiRequest {
+            prompt,
+            image_path: Some(image_path.clone()),
+        };
+        match client.chat(&ai_request) {
+            Ok(response) => Response::GrabResult {
+                image_path,
+                text: extracted_text,
+                ai_response: Some(response.content),
+            },
+            Err(e) => Response::Error(e.to_string()),
+        }
+    } else if search {
+        if let Some(ref text) = extracted_text {
+            let config = Config::load();
+            let client = crate::actions::ai::OpenAiClient::new(
+                config.api_endpoint,
+                config.api_key,
+                config.model.clone(),
+            );
+            let ai_request = crate::types::AiRequest {
+                prompt: format!("Search the web for: {}", text),
+                image_path: Some(image_path.clone()),
+            };
+            match client.chat(&ai_request) {
+                Ok(response) => Response::GrabResult {
+                    image_path,
+                    text: extracted_text,
+                    ai_response: Some(response.content),
+                },
+                Err(e) => Response::Error(e.to_string()),
+            }
+        } else {
+            Response::GrabResult {
+                image_path,
+                text: None,
+                ai_response: None,
+            }
+        }
+    } else {
+        Response::GrabResult {
+            image_path,
+            text: extracted_text,
+            ai_response: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +316,14 @@ mod tests {
     async fn test_handle_stop() {
         let response = handle_request(Request::Stop).await;
         assert!(matches!(response, Response::Stopped));
+    }
+
+    #[test]
+    fn test_concurrent_capture_guard() {
+        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
+        assert!(!was_capturing);
+        let was_capturing = CAPTURING.swap(true, Ordering::SeqCst);
+        assert!(was_capturing);
+        CAPTURING.store(false, Ordering::SeqCst);
     }
 }
