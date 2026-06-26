@@ -78,43 +78,55 @@ impl ScreenCapture for WaylandCapture {
 }
 
 fn parse_slurp_output(output: &str) -> Result<CaptureRegion, CaptureError> {
-    let parts: Vec<&str> = output.split_whitespace().collect();
-    if parts.len() != 1 {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Err(CaptureError::ToolFailed("Empty slurp output".to_string()));
+    }
+
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    if parts.len() != 2 {
         return Err(CaptureError::ToolFailed(format!(
-            "Unexpected slurp output: {}",
-            output
+            "Invalid slurp output format, expected 'x,y WxH', got: {}",
+            trimmed
         )));
     }
 
-    let geometry = parts[0];
-    let xy_wh: Vec<&str> = geometry.split('+').collect();
-    if xy_wh.len() != 3 {
+    let xy_parts: Vec<&str> = parts[0].split(',').collect();
+    if xy_parts.len() != 2 {
         return Err(CaptureError::ToolFailed(format!(
-            "Invalid geometry format: {}",
-            geometry
+            "Invalid coordinate format, expected 'x,y', got: {}",
+            parts[0]
         )));
     }
 
-    let xy: Vec<&str> = xy_wh[0].split('x').collect();
-    if xy.len() != 2 {
+    let x: i32 = xy_parts[0]
+        .parse()
+        .map_err(|_| CaptureError::ToolFailed(format!("Invalid X coordinate: {}", xy_parts[0])))?;
+    let y: i32 = xy_parts[1]
+        .parse()
+        .map_err(|_| CaptureError::ToolFailed(format!("Invalid Y coordinate: {}", xy_parts[1])))?;
+
+    let wh_parts: Vec<&str> = parts[1].split('x').collect();
+    if wh_parts.len() != 2 {
         return Err(CaptureError::ToolFailed(format!(
-            "Invalid XY format: {}",
-            xy_wh[0]
+            "Invalid dimension format, expected 'WxH', got: {}",
+            parts[1]
         )));
     }
 
-    let x: i32 = xy_wh[1]
+    let width: u32 = wh_parts[0]
         .parse()
-        .map_err(|_| CaptureError::ToolFailed(format!("Invalid X coordinate: {}", xy_wh[1])))?;
-    let y: i32 = xy_wh[2]
+        .map_err(|_| CaptureError::ToolFailed(format!("Invalid width: {}", wh_parts[0])))?;
+    let height: u32 = wh_parts[1]
         .parse()
-        .map_err(|_| CaptureError::ToolFailed(format!("Invalid Y coordinate: {}", xy_wh[2])))?;
-    let width: u32 = xy[0]
-        .parse()
-        .map_err(|_| CaptureError::ToolFailed(format!("Invalid width: {}", xy[0])))?;
-    let height: u32 = xy[1]
-        .parse()
-        .map_err(|_| CaptureError::ToolFailed(format!("Invalid height: {}", xy[1])))?;
+        .map_err(|_| CaptureError::ToolFailed(format!("Invalid height: {}", wh_parts[1])))?;
+
+    if width == 0 || height == 0 {
+        return Err(CaptureError::ToolFailed(format!(
+            "Invalid dimensions: {}x{}, width and height must be > 0",
+            width, height
+        )));
+    }
 
     Ok(CaptureRegion {
         x,
@@ -129,24 +141,92 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_slurp_output() {
-        let output = "800x600+100+200";
-        let region = parse_slurp_output(output).unwrap();
-        assert_eq!(region.width, 800);
-        assert_eq!(region.height, 600);
-        assert_eq!(region.x, 100);
-        assert_eq!(region.y, 200);
+    fn test_parse_standard_format() {
+        let region = parse_slurp_output("424,220 615x227").unwrap();
+        assert_eq!(region.x, 424);
+        assert_eq!(region.y, 220);
+        assert_eq!(region.width, 615);
+        assert_eq!(region.height, 227);
     }
 
     #[test]
-    fn test_parse_slurp_invalid() {
-        let result = parse_slurp_output("invalid");
+    fn test_parse_negative_coords() {
+        let region = parse_slurp_output("-1920,0 1920x1080").unwrap();
+        assert_eq!(region.x, -1920);
+        assert_eq!(region.y, 0);
+        assert_eq!(region.width, 1920);
+        assert_eq!(region.height, 1080);
+    }
+
+    #[test]
+    fn test_parse_trailing_newline() {
+        let region = parse_slurp_output("424,220 615x227\n").unwrap();
+        assert_eq!(region.x, 424);
+        assert_eq!(region.y, 220);
+        assert_eq!(region.width, 615);
+        assert_eq!(region.height, 227);
+    }
+
+    #[test]
+    fn test_parse_trailing_whitespace() {
+        let region = parse_slurp_output("424,220 615x227  ").unwrap();
+        assert_eq!(region.x, 424);
+        assert_eq!(region.y, 220);
+        assert_eq!(region.width, 615);
+        assert_eq!(region.height, 227);
+    }
+
+    #[test]
+    fn test_parse_malformed_too_few_parts() {
+        let result = parse_slurp_output("424,220");
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_parse_slurp_empty() {
+    fn test_parse_malformed_no_comma() {
+        let result = parse_slurp_output("424 220 615x227");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_malformed_no_x() {
+        let result = parse_slurp_output("424,220 615-227");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_zero_width() {
+        let result = parse_slurp_output("0,0 0x100");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_zero_height() {
+        let result = parse_slurp_output("0,0 100x0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_empty() {
         let result = parse_slurp_output("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_whitespace_only() {
+        let result = parse_slurp_output("   ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_x() {
+        let result = parse_slurp_output("abc,220 615x227");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_width() {
+        let result = parse_slurp_output("424,220 xyzx227");
         assert!(result.is_err());
     }
 
