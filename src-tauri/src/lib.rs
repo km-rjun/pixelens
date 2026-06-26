@@ -24,6 +24,7 @@ pub fn run() {
             commands::capture::capture_region,
             commands::capture::check_capture_tools,
             commands::ocr::perform_ocr,
+            commands::ocr::check_ocr_tools,
             commands::ai::ask_ai,
             utils::config::get_config,
             utils::config::save_config,

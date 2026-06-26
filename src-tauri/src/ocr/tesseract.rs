@@ -52,4 +52,39 @@ mod tests {
         let result = engine.is_available();
         assert!(result, "tesseract should be available");
     }
+
+    #[test]
+    fn test_file_not_found() {
+        let engine = TesseractEngine;
+        let result = engine.perform_ocr("/tmp/nonexistent.png", "eng");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            OcrError::InvalidImage(msg) => assert!(msg.contains("File not found")),
+            _ => panic!("Expected InvalidImage error"),
+        }
+    }
+
+    #[test]
+    fn test_perform_ocr() {
+        let engine = TesseractEngine;
+        let result = engine.perform_ocr("/tmp/test_ocr.png", "eng");
+        assert!(result.is_ok(), "OCR should succeed: {:?}", result.err());
+        let ocr_result = result.unwrap();
+        assert!(
+            ocr_result.text.contains("Hello"),
+            "Should recognize 'Hello', got: {:?}",
+            ocr_result.text
+        );
+        assert_eq!(ocr_result.language, "eng");
+    }
+
+    #[test]
+    fn test_supported_languages() {
+        let output = Command::new("tesseract")
+            .arg("--list-langs")
+            .output()
+            .unwrap();
+        let langs = String::from_utf8_lossy(&output.stdout);
+        assert!(langs.contains("eng"), "English should be supported");
+    }
 }
