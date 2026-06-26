@@ -138,3 +138,41 @@ cargo build --workspace
 ## License
 
 MIT
+
+## Compositor Keybindings
+
+Since global hotkeys are not reliably supported across Wayland compositors, Pixelens uses compositor-level keybindings to trigger capture.
+
+### Hyprland
+
+Add to `~/.config/hypr/hyprland.conf`:
+
+```
+# Pixelens capture
+bind = SUPER SHIFT, S, exec, pixelens grab
+bind = SUPER SHIFT, A, exec, pixelens grab --ai "What is this?"
+bind = SUPER SHIFT, F, exec, pixelens grab --search
+```
+
+### Niri
+
+Add to `~/.config/niri/config.kdl`:
+
+```kdl
+binds {
+    Mod+Shift+S { spawn "pixelens" "grab"; }
+    Mod+Shift+A { spawn "pixelens" "grab" "--ai" "What is this?"; }
+    Mod+Shift+F { spawn "pixelens" "grab" "--search"; }
+}
+```
+
+### Sway
+
+Add to `~/.config/sway/config`:
+
+```
+# Pixelens capture
+bindsym $mod+Shift+s exec pixelens grab
+bindsym $mod+Shift+a exec pixelens grab --ai "What is this?"
+bindsym $mod+Shift+f exec pixelens grab --search
+```
