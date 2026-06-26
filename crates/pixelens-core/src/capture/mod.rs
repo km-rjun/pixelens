@@ -44,7 +44,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_check_tools() {
+    fn test_check_tools_runs() {
+        let _missing = check_tools();
+    }
+
+    #[test]
+    fn test_tool_exists_nonexistent() {
+        assert!(!tool_exists("nonexistent_tool_xyz"));
+    }
+
+    #[test]
+    #[ignore = "requires grim and slurp installed"]
+    fn test_check_tools_all_present() {
         let missing = check_tools();
         assert!(missing.is_empty(), "Missing tools: {:?}", missing);
     }

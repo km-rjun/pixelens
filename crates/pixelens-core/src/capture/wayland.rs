@@ -151,6 +151,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Wayland session with grim and slurp"]
     fn test_is_available() {
         let capture = WaylandCapture;
         let result = capture.is_available();
