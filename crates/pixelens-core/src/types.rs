@@ -12,7 +12,7 @@ pub struct CaptureRegion {
 
 impl CaptureRegion {
     pub fn to_grim_geometry(&self) -> String {
-        format!("{}x{}+{}+{}", self.width, self.height, self.x, self.y)
+        format!("{},{} {}x{}", self.x, self.y, self.width, self.height)
     }
 }
 
@@ -95,13 +95,41 @@ mod tests {
     }
 
     #[test]
-    fn test_capture_region_to_grim_geometry() {
+    fn test_to_grim_geometry() {
         let region = CaptureRegion {
-            x: 100,
-            y: 200,
-            width: 800,
-            height: 600,
+            x: 424,
+            y: 220,
+            width: 615,
+            height: 227,
         };
-        assert_eq!(region.to_grim_geometry(), "800x600+100+200");
+        assert_eq!(region.to_grim_geometry(), "424,220 615x227");
+    }
+
+    #[test]
+    fn test_to_grim_geometry_negative() {
+        let region = CaptureRegion {
+            x: -1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(region.to_grim_geometry(), "-1920,0 1920x1080");
+    }
+
+    #[test]
+    fn test_roundtrip_slurp_to_grim() {
+        let slurp_output = "424,220 615x227";
+        let parts: Vec<&str> = slurp_output.split_whitespace().collect();
+        let xy: Vec<&str> = parts[0].split(',').collect();
+        let wh: Vec<&str> = parts[1].split('x').collect();
+
+        let region = CaptureRegion {
+            x: xy[0].parse().unwrap(),
+            y: xy[1].parse().unwrap(),
+            width: wh[0].parse().unwrap(),
+            height: wh[1].parse().unwrap(),
+        };
+
+        assert_eq!(region.to_grim_geometry(), "424,220 615x227");
     }
 }
