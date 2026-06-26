@@ -1,6 +1,6 @@
+use super::ActionHandler;
 use crate::error::PixelensError;
 use crate::types::{ActionPayload, ActionType};
-use super::ActionHandler;
 
 pub struct CopyHandler;
 

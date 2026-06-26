@@ -2,9 +2,9 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+use super::AiProvider;
 use crate::error::AiError;
 use crate::types::{AiRequest, AiResponse};
-use super::AiProvider;
 
 #[derive(Serialize)]
 struct Message {
@@ -65,10 +65,7 @@ impl AiProvider for OpenAiClient {
                 }
             });
 
-            content
-                .as_array_mut()
-                .unwrap()
-                .push(image_content);
+            content.as_array_mut().unwrap().push(image_content);
         }
 
         let text_content = serde_json::json!({

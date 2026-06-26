@@ -1,8 +1,8 @@
 use std::process::Command;
 
+use super::OcrEngine;
 use crate::error::OcrError;
 use crate::types::OcrResult;
-use super::OcrEngine;
 
 pub struct TesseractEngine;
 

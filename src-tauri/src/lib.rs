@@ -22,6 +22,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::capture::capture_region,
+            commands::capture::check_capture_tools,
             commands::ocr::perform_ocr,
             commands::ai::ask_ai,
             utils::config::get_config,

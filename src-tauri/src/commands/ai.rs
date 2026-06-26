@@ -16,9 +16,6 @@ pub fn ask_ai(
     let mdl = model.unwrap_or(config.model);
 
     let provider = create_provider(&endpoint, &key, &mdl);
-    let request = AiRequest {
-        prompt,
-        image_path,
-    };
+    let request = AiRequest { prompt, image_path };
     provider.chat(&request).map_err(|e| e.to_string())
 }
