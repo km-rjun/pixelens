@@ -9,6 +9,7 @@ A Linux-native visual search and OCR utility.
 - **Clipboard**: Copy extracted text to clipboard via wl-copy
 - **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
 - **Browser**: Open search results in default browser
+- **Reverse Image Search**: Not yet implemented
 - **CLI**: Selection-first commands for all operations
 - **Daemon**: Background service for handling capture and processing
 - **IPC**: Unix domain socket communication between CLI and daemon

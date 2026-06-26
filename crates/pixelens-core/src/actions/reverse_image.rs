@@ -5,16 +5,10 @@ use crate::types::{ActionPayload, ActionType};
 pub struct ReverseImageHandler;
 
 impl ActionHandler for ReverseImageHandler {
-    fn execute(&self, payload: &ActionPayload) -> Result<String, PixelensError> {
-        let image_path = payload.image_path.as_ref().ok_or_else(|| {
-            PixelensError::Config("No image provided for reverse search".to_string())
-        })?;
-
-        let url = format!(
-            "https://lens.google.com/uploadbyurl?url=file://{}",
-            urlencoding::encode(image_path)
-        );
-        Ok(url)
+    fn execute(&self, _payload: &ActionPayload) -> Result<String, PixelensError> {
+        Err(PixelensError::Config(
+            "Reverse image search is not yet implemented".to_string(),
+        ))
     }
 
     fn action_type(&self) -> ActionType {
@@ -27,26 +21,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_reverse_image_handler() {
+    fn test_reverse_image_handler_not_implemented() {
         let handler = ReverseImageHandler;
         let payload = ActionPayload {
             text: String::new(),
             image_path: Some("/tmp/screenshot.png".to_string()),
         };
-        let result = handler.execute(&payload).unwrap();
-        assert!(result.contains("lens.google.com"));
-        assert!(result.contains("screenshot.png"));
-    }
-
-    #[test]
-    fn test_reverse_image_handler_no_image() {
-        let handler = ReverseImageHandler;
-        let payload = ActionPayload {
-            text: String::new(),
-            image_path: None,
-        };
         let result = handler.execute(&payload);
         assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not yet implemented"));
     }
 
     #[test]
