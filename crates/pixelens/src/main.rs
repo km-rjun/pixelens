@@ -96,7 +96,7 @@ async fn main() {
         Commands::Translate { to } => cmd_translate(&to).await,
         Commands::Image => cmd_image().await,
         Commands::Daemon { action } => match action {
-            DaemonAction::Start => cmd_daemon_start(),
+            DaemonAction::Start => cmd_daemon_start().await,
             DaemonAction::Status => cmd_daemon_status().await,
             DaemonAction::Stop => cmd_daemon_stop().await,
         },
@@ -311,7 +311,17 @@ async fn cmd_image() -> i32 {
     }
 }
 
-fn cmd_daemon_start() -> i32 {
+async fn cmd_daemon_start() -> i32 {
+    let client = IpcClient::new();
+    match client.ping().await {
+        Ok(true) => {
+            eprintln!("Daemon is already running");
+            return 0;
+        }
+        Ok(false) => {}
+        Err(_) => {}
+    }
+
     let exe = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("pixelensd")).or(Some(p)));
@@ -331,9 +341,19 @@ fn cmd_daemon_start() -> i32 {
     }
 
     match process::Command::new(&exe_path).spawn() {
-        Ok(child) => {
-            eprintln!("pixelensd started (pid: {})", child.id());
-            0
+        Ok(_) => {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let client = IpcClient::new();
+            match client.ping().await {
+                Ok(true) => {
+                    eprintln!("pixelensd started and responding");
+                    0
+                }
+                _ => {
+                    eprintln!("pixelensd started but not responding yet");
+                    1
+                }
+            }
         }
         Err(e) => {
             eprintln!("Failed to start pixelensd: {}", e);
@@ -372,14 +392,27 @@ async fn cmd_daemon_status() -> i32 {
 
 async fn cmd_daemon_stop() -> i32 {
     let client = IpcClient::new();
+    match client.ping().await {
+        Ok(false) | Err(_) => {
+            println!("Daemon was not running");
+            return 0;
+        }
+        _ => {}
+    }
+
     match client.stop().await {
         Ok(()) => {
-            println!("Daemon stopped");
-            0
-        }
-        Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
-            println!("Daemon was not running");
-            0
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            match client.ping().await {
+                Ok(false) | Err(_) => {
+                    println!("Daemon stopped");
+                    0
+                }
+                _ => {
+                    eprintln!("Daemon stop requested but daemon still responding");
+                    1
+                }
+            }
         }
         Err(e) => {
             eprintln!("Stop failed: {}", e);
