@@ -5,6 +5,7 @@ members = [
     "crates/pixelens-capture",
     "crates/pixelens-ocr",
     "crates/pixelens-actions",
+    "crates/pixelens-ipc",
     "crates/pixelens-cli",
     "crates/pixelensd",
 ]
@@ -24,6 +25,7 @@ pixelens-config = { path = "crates/pixelens-config" }
 pixelens-capture = { path = "crates/pixelens-capture" }
 pixelens-ocr = { path = "crates/pixelens-ocr" }
 pixelens-actions = { path = "crates/pixelens-actions" }
+pixelens-ipc = { path = "crates/pixelens-ipc" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
