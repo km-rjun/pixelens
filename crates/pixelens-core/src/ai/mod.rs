@@ -440,3 +440,128 @@ mod tests {
         }
     }
 }
+
+#[test]
+fn test_ask_ai_receives_ocr_text_in_prompt() {
+    let client = OpenAiClient::new(
+        "https://api.openai.com/v1".to_string(),
+        "test-key".to_string(),
+        "gpt-4o".to_string(),
+    );
+
+    let request = AiRequest {
+        prompt: "OCR text: Hello World".to_string(),
+        image_path: None,
+    };
+
+    let chat_request = client.build_request(&request).unwrap();
+    let content = &chat_request.messages[0].content;
+    let arr = content.as_array().unwrap();
+
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["type"], "text");
+    assert!(arr[0]["text"].as_str().unwrap().contains("Hello World"));
+}
+
+#[test]
+fn test_ask_ai_receives_image_with_text() {
+    let tmp = std::env::temp_dir().join("pixelens_test_ask_ai.png");
+    std::fs::write(&tmp, b"fake png data").unwrap();
+
+    let client = OpenAiClient::new(
+        "https://api.openai.com/v1".to_string(),
+        "test-key".to_string(),
+        "gpt-4o".to_string(),
+    );
+
+    let request = AiRequest {
+        prompt: "OCR text: Hello World".to_string(),
+        image_path: Some(tmp.to_string_lossy().to_string()),
+    };
+
+    let chat_request = client.build_request(&request).unwrap();
+    let content = &chat_request.messages[0].content;
+    let arr = content.as_array().unwrap();
+
+    assert_eq!(arr.len(), 2, "Should have both image and text");
+    assert_eq!(arr[0]["type"], "image_url");
+    assert!(arr[0]["image_url"]["url"]
+        .as_str()
+        .unwrap()
+        .starts_with("data:image/png;base64,"));
+    assert_eq!(arr[1]["type"], "text");
+    assert!(arr[1]["text"].as_str().unwrap().contains("Hello World"));
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+#[test]
+fn test_text_only_fallback_when_image_missing() {
+    let client = OpenAiClient::new(
+        "https://api.openai.com/v1".to_string(),
+        "test-key".to_string(),
+        "gpt-4o".to_string(),
+    );
+
+    let request = AiRequest {
+        prompt: "Describe this".to_string(),
+        image_path: Some("/tmp/nonexistent_abc123.png".to_string()),
+    };
+
+    let chat_request = client.build_request(&request).unwrap();
+    let content = &chat_request.messages[0].content;
+    let arr = content.as_array().unwrap();
+
+    assert_eq!(arr.len(), 1, "Should fall back to text only");
+    assert_eq!(arr[0]["type"], "text");
+}
+
+#[test]
+fn test_unsupported_model_returns_clear_error() {
+    let client = OpenAiClient::new(
+        "https://api.openai.com/v1".to_string(),
+        "test-key".to_string(),
+        "gpt-3.5-turbo".to_string(),
+    );
+
+    let tmp = std::env::temp_dir().join("pixelens_test_unsupported.png");
+    std::fs::write(&tmp, b"fake png data").unwrap();
+
+    let request = AiRequest {
+        prompt: "Describe this".to_string(),
+        image_path: Some(tmp.to_string_lossy().to_string()),
+    };
+
+    let result = client.build_request(&request);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("does not support image input"));
+    assert!(err.contains("gpt-3.5-turbo"));
+
+    std::fs::remove_file(&tmp).ok();
+}
+
+#[test]
+fn test_vision_models_accept_images() {
+    let vision_models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "claude-3-sonnet"];
+    for model in &vision_models {
+        let client = OpenAiClient::new(
+            "https://api.openai.com/v1".to_string(),
+            "test-key".to_string(),
+            model.to_string(),
+        );
+
+        let tmp = std::env::temp_dir().join(format!("pixelens_test_{}.png", model));
+        std::fs::write(&tmp, b"fake png data").unwrap();
+
+        let request = AiRequest {
+            prompt: "Describe".to_string(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+
+        let result = client.build_request(&request);
+        assert!(result.is_ok(), "Model {} should accept images", model);
+
+        std::fs::remove_file(&tmp).ok();
+    }
+}
