@@ -2,18 +2,20 @@
 
 A Linux-native visual search and OCR utility.
 
-## Features
+## Status
 
-- **Screen Capture**: Select any region of your screen using grim/slurp
-- **OCR**: Extract text from captured images using Tesseract
-- **Action Menu**: After capture, choose copy, search, AI, or translate
-- **Clipboard**: Copy extracted text to clipboard via wl-copy
-- **AI Integration**: Ask AI about captured content (OpenAI-compatible APIs)
-- **Browser**: Open search results in default browser
-- **CLI**: Selection-first commands for all operations
-- **Daemon**: Background service for handling capture and processing
-- **IPC**: Unix domain socket communication between CLI and daemon
-- **Configuration**: JSON-based config with environment variable support
+| Feature | Status |
+|---------|--------|
+| Screen capture (grim/slurp) | Working |
+| OCR (Tesseract) | Working |
+| Action menu after capture | Working |
+| Clipboard copy (wl-copy) | Working |
+| Web search (xdg-open) | Working |
+| AI integration | Working |
+| Translate | Working |
+| Daemon with IPC | Working |
+| Reverse image search | Not implemented |
+| X11 support | Not implemented |
 
 ## Architecture
 
