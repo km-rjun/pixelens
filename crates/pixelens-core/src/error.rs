@@ -56,10 +56,9 @@ impl std::fmt::Display for RateLimitKind {
                 Some(secs) => write!(f, "Rate limited. Retry after {} seconds", secs),
                 None => write!(f, "Rate limited. Retry later"),
             },
-            Self::QuotaExhausted => write!(
-                f,
-                "Quota or usage limit reached. Check billing at your provider"
-            ),
+            Self::QuotaExhausted => {
+                write!(f, "API quota exhausted. Check provider billing/credits")
+            }
         }
     }
 }

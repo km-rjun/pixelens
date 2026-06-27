@@ -25,6 +25,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
 - Vision model detection for AI image input
+- Quota exhaustion error reporting (insufficient_quota)
 - CI passing on GitHub Actions
 
 ## Current Command Semantics
