@@ -94,7 +94,6 @@ Configuration is stored at `~/.config/pixelens/config.json`:
   "api_endpoint": "https://api.openai.com/v1",
   "model": "gpt-4o",
   "ocr_language": "eng",
-  "hotkey": "Ctrl+Shift+C",
   "menu_backend": "auto"
 }
 ```

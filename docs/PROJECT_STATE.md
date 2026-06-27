@@ -20,7 +20,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - `pixelens grab` showing action menu after OCR
 - `pixelens copy` copying OCR text via `wl-copy`
 - `pixelens search` returning search URL and opening browser
-- `pixelens ai` sending text and image to configured AI provider
+- `pixelens ai` sending text and image to configured AI provider (if model supports vision)
 - `pixelens translate` translating OCR text
 - Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
@@ -68,7 +68,9 @@ Configure via `menu_backend` in config (default: "auto").
 
 ## Next Milestone
 
-Implement clipboard integration verification and polish the action menu UX.
+Polish Ask AI behavior: improve prompt construction, add default prompts, and verify image input works with vision models.
+
+See `docs/ROADMAP.md` for full roadmap.
 
 ## Non-Goals for Next Milestone
 
