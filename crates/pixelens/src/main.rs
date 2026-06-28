@@ -3,7 +3,6 @@ use std::process;
 
 use pixelens_core::config::Config;
 use pixelens_core::ipc::client::IpcClient;
-use pixelens_core::ipc::protocol::Request;
 use pixelens_core::types::ActionType;
 
 #[derive(Parser)]
@@ -17,13 +16,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Select a region, OCR it, and print the extracted text
+    /// Select a region, OCR it, and show action bar
     Grab,
 
     /// Select a region, OCR it, copy text to clipboard
     Copy,
 
-    /// Select a region, OCR it, search the web for the text
+    /// Select a region, OCR it, search the web
     Search,
 
     /// Select a region, OCR it, send to AI
@@ -42,6 +41,9 @@ enum Commands {
 
     /// Select a region, perform reverse image search
     Image,
+
+    /// Check if Pixelens is ready to run
+    Check,
 
     /// Manage the pixelensd daemon
     Daemon {
@@ -92,9 +94,10 @@ async fn main() {
         Commands::Grab => cmd_grab().await,
         Commands::Copy => cmd_copy().await,
         Commands::Search => cmd_search().await,
-        Commands::Ai { prompt } => cmd_ai(prompt.as_deref()).await,
+        Commands::Ai { prompt } => cmd_ai(&prompt.unwrap_or_default(), None).await,
         Commands::Translate { to } => cmd_translate(&to).await,
         Commands::Image => cmd_image().await,
+        Commands::Check => cmd_check(),
         Commands::Daemon { action } => match action {
             DaemonAction::Start => cmd_daemon_start().await,
             DaemonAction::Status => cmd_daemon_status().await,
@@ -118,9 +121,9 @@ async fn main() {
 async fn do_grab() -> Result<(String, Option<String>), i32> {
     let client = IpcClient::new();
     match client.grab(false, None).await {
-        Ok((image_path, text, _ai_response)) => {
+        Ok((_image_path, text, _ai_response)) => {
             if let Some(t) = &text {
-                Ok((t.clone(), Some(image_path)))
+                Ok((t.clone(), Some(t.clone())))
             } else {
                 eprintln!("No text extracted from capture");
                 Err(1)
@@ -143,7 +146,7 @@ async fn do_grab() -> Result<(String, Option<String>), i32> {
 }
 
 async fn cmd_grab() -> i32 {
-    let (text, image_path) = match do_grab().await {
+    let (text, _image_path) = match do_grab().await {
         Ok(v) => v,
         Err(code) => return code,
     };
@@ -164,11 +167,7 @@ async fn cmd_grab() -> i32 {
         pixelens_core::menu::MenuChoice::Copy => {
             let client = IpcClient::new();
             match client
-                .action(
-                    pixelens_core::types::ActionType::CopyToClipboard,
-                    &text,
-                    None,
-                )
+                .action(ActionType::CopyToClipboard, &text, None)
                 .await
             {
                 Ok(_) => {
@@ -183,10 +182,7 @@ async fn cmd_grab() -> i32 {
         }
         pixelens_core::menu::MenuChoice::Search => {
             let client = IpcClient::new();
-            match client
-                .action(pixelens_core::types::ActionType::SearchWeb, &text, None)
-                .await
-            {
+            match client.action(ActionType::SearchWeb, &text, None).await {
                 Ok(url) => {
                     println!("{}", url);
                     0
@@ -203,7 +199,7 @@ async fn cmd_grab() -> i32 {
             match client
                 .send(pixelens_core::ipc::protocol::Request::Ai {
                     prompt,
-                    image_path: image_path.clone(),
+                    image_path: None,
                 })
                 .await
             {
@@ -216,7 +212,11 @@ async fn cmd_grab() -> i32 {
                     1
                 }
                 Ok(_) => {
-                    eprintln!("Unexpected response");
+                    eprintln!("Unexpected response from daemon");
+                    1
+                }
+                Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
+                    eprintln!("Daemon not running. Start with: pixelens daemon start");
                     1
                 }
                 Err(e) => {
@@ -247,7 +247,11 @@ async fn cmd_grab() -> i32 {
                     1
                 }
                 Ok(_) => {
-                    eprintln!("Unexpected response");
+                    eprintln!("Unexpected response from daemon");
+                    1
+                }
+                Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
+                    eprintln!("Daemon not running. Start with: pixelens daemon start");
                     1
                 }
                 Err(e) => {
@@ -270,10 +274,7 @@ async fn cmd_copy() -> i32 {
         .action(ActionType::CopyToClipboard, &text, None)
         .await
     {
-        Ok(_) => {
-            eprintln!("Copied to clipboard");
-            0
-        }
+        Ok(_) => 0,
         Err(e) => {
             eprintln!("Copy failed: {}", e);
             1
@@ -300,36 +301,12 @@ async fn cmd_search() -> i32 {
     }
 }
 
-async fn cmd_ai(prompt: Option<&str>) -> i32 {
-    let (ocr_text, _) = match do_grab().await {
-        Ok(v) => v,
-        Err(code) => return code,
-    };
-
-    let final_prompt = match prompt {
-        Some(p) => format!("{}\n\nText from screen:\n{}", p, ocr_text),
-        None => format!("Describe or explain the following text:\n\n{}", ocr_text),
-    };
-
+async fn cmd_ai(prompt: &str, image: Option<&str>) -> i32 {
     let client = IpcClient::new();
-    match client
-        .send(Request::Ai {
-            prompt: final_prompt,
-            image_path: None,
-        })
-        .await
-    {
-        Ok(pixelens_core::ipc::protocol::Response::AiResult { content, .. }) => {
+    match client.ai(prompt, image).await {
+        Ok((content, _)) => {
             println!("{}", content);
             0
-        }
-        Ok(pixelens_core::ipc::protocol::Response::Error(e)) => {
-            eprintln!("AI error: {}", e);
-            1
-        }
-        Ok(_) => {
-            eprintln!("Unexpected response from daemon");
-            1
         }
         Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
             eprintln!("Daemon not running. Start with: pixelens daemon start");
@@ -355,7 +332,7 @@ async fn cmd_translate(to: &str) -> i32 {
 
     let client = IpcClient::new();
     match client
-        .send(Request::Ai {
+        .send(pixelens_core::ipc::protocol::Request::Ai {
             prompt,
             image_path: None,
         })
@@ -418,54 +395,41 @@ async fn cmd_image() -> i32 {
     }
 }
 
+fn cmd_check() -> i32 {
+    let result = pixelens_core::check::run_check();
+    result.print();
+    if result.has_failures() {
+        1
+    } else {
+        0
+    }
+}
+
 async fn cmd_daemon_start() -> i32 {
-    let client = IpcClient::new();
-    match client.ping().await {
-        Ok(true) => {
-            eprintln!("Daemon is already running");
-            return 0;
-        }
-        Ok(false) => {}
-        Err(_) => {}
-    }
+    let server = pixelens_core::ipc::server::IpcServer::new();
+    log::info!("Starting Pixelens daemon...");
 
-    let exe = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("pixelensd")).or(Some(p)));
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+    let notify_clone = notify.clone();
 
-    let exe_path = match exe {
-        Some(p) => p,
-        None => {
-            eprintln!("Could not determine pixelensd path");
-            return 1;
-        }
-    };
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        log::info!("Shutdown signal received");
+        notify_clone.notify_one();
+    });
 
-    if !exe_path.exists() {
-        eprintln!("pixelensd not found at: {}", exe_path.display());
-        eprintln!("Build it with: cargo build --release -p pixelensd");
-        return 1;
-    }
+    let server_clone = server.clone();
+    tokio::spawn(async move {
+        notify.notified().await;
+        server_clone.stop();
+        process::exit(0);
+    });
 
-    match process::Command::new(&exe_path).spawn() {
-        Ok(_) => {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let client = IpcClient::new();
-            match client.ping().await {
-                Ok(true) => {
-                    eprintln!("pixelensd started and responding");
-                    0
-                }
-                _ => {
-                    eprintln!("pixelensd started but not responding yet");
-                    1
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to start pixelensd: {}", e);
-            1
-        }
+    if let Err(e) = server.start().await {
+        eprintln!("Daemon error: {}", e);
+        1
+    } else {
+        0
     }
 }
 
@@ -499,27 +463,14 @@ async fn cmd_daemon_status() -> i32 {
 
 async fn cmd_daemon_stop() -> i32 {
     let client = IpcClient::new();
-    match client.ping().await {
-        Ok(false) | Err(_) => {
-            println!("Daemon was not running");
-            return 0;
-        }
-        _ => {}
-    }
-
     match client.stop().await {
         Ok(()) => {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            match client.ping().await {
-                Ok(false) | Err(_) => {
-                    println!("Daemon stopped");
-                    0
-                }
-                _ => {
-                    eprintln!("Daemon stop requested but daemon still responding");
-                    1
-                }
-            }
+            println!("Daemon stopped");
+            0
+        }
+        Err(pixelens_core::ipc::IpcError::ConnectionFailed(_)) => {
+            println!("Daemon was not running");
+            0
         }
         Err(e) => {
             eprintln!("Stop failed: {}", e);
