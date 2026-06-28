@@ -79,20 +79,34 @@ impl MenuBackend for ActionBarBackend {
     }
 }
 
+fn build_viewport_options() -> eframe::NativeOptions {
+    let size = [280.0, 44.0];
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Pixelens Action Bar")
+            .with_inner_size(size)
+            .with_min_inner_size(size)
+            .with_max_inner_size(size)
+            .with_resizable(false)
+            .with_decorations(true)
+            .with_transparent(false)
+            .with_taskbar(false)
+            .with_titlebar_shown(true)
+            .with_titlebar_buttons_shown(false),
+        ..Default::default()
+    }
+}
+
 pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
     let (tx, rx) = mpsc::channel();
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([250.0, 40.0])
-            .with_decorations(false)
-            .with_transparent(true),
-        ..Default::default()
-    };
-
     let app = ActionBarApp { tx };
 
-    let result = eframe::run_native("Action Bar", options, Box::new(|_cc| Ok(Box::new(app))));
+    let result = eframe::run_native(
+        "Pixelens Action Bar",
+        build_viewport_options(),
+        Box::new(|_cc| Ok(Box::new(app))),
+    );
 
     match result {
         Ok(()) => {}
@@ -108,15 +122,12 @@ pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
 pub fn create_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([250.0, 40.0])
-                .with_decorations(false)
-                .with_transparent(true),
-            ..Default::default()
-        };
         let app = ActionBarApp { tx };
-        let _ = eframe::run_native("Action Bar", options, Box::new(|_cc| Ok(Box::new(app))));
+        let _ = eframe::run_native(
+            "Pixelens Action Bar",
+            build_viewport_options(),
+            Box::new(|_cc| Ok(Box::new(app))),
+        );
     });
 
     Ok(Box::new(ActionBarBackend { rx }))
@@ -163,5 +174,13 @@ mod tests {
         assert_eq!(MenuChoice::from_key("escape"), Some(MenuChoice::Cancel));
         assert_eq!(MenuChoice::from_key("q"), Some(MenuChoice::Cancel));
         assert_eq!(MenuChoice::from_key("x"), None);
+    }
+
+    #[test]
+    fn test_action_bar_window_size() {
+        let options = build_viewport_options();
+        let size = options.viewport.inner_size.unwrap();
+        assert_eq!(size[0], 280.0);
+        assert_eq!(size[1], 44.0);
     }
 }
