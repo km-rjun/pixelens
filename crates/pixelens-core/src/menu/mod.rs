@@ -1,3 +1,4 @@
+pub mod action_bar;
 pub mod fuzzel;
 pub mod stdin;
 pub mod wofi;
@@ -32,22 +33,17 @@ pub trait MenuBackend {
 }
 
 pub fn detect_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
-    if fuzzel::is_available() {
-        return Ok(Box::new(fuzzel::FuzzelMenu));
-    }
-    if wofi::is_available() {
-        return Ok(Box::new(wofi::WofiMenu));
-    }
-    Ok(Box::new(stdin::StdinMenu))
+    Ok(Box::new(action_bar::ActionBar))
 }
 
 pub fn create_backend(name: &str) -> Result<Box<dyn MenuBackend>, PixelensError> {
     match name {
+        "action_bar" | "built-in" | "auto" => Ok(Box::new(action_bar::ActionBar)),
         "fuzzel" => Ok(Box::new(fuzzel::FuzzelMenu)),
         "wofi" => Ok(Box::new(wofi::WofiMenu)),
         "stdin" => Ok(Box::new(stdin::StdinMenu)),
         _ => Err(PixelensError::Config(format!(
-            "Unknown menu backend: {}",
+            "Unknown menu backend: {}. Supported: action_bar, fuzzel, wofi, stdin",
             name
         ))),
     }

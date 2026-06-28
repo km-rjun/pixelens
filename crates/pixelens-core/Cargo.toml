@@ -17,3 +17,4 @@ base64.workspace = true
 urlencoding.workspace = true
 tokio.workspace = true
 fastrand.workspace = true
+crossterm.workspace = true

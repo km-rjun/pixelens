@@ -36,14 +36,17 @@ pixelens/
 └── README.md
 ```
 
-## Requirements
+## Prerequisites
 
-- Rust 1.77.2+
-- grim (Wayland screenshot tool)
-- slurp (Wayland region selector)
-- tesseract-ocr
-- wl-clipboard (for `wl-copy`)
-- Menu backend: fuzzel, wofi, or stdin fallback
+Before using Pixelens, ensure the following are installed:
+
+| Tool | Purpose | Install (Arch) |
+|------|---------|----------------|
+| `grim` | Wayland screenshot capture | `pacman -S grim` |
+| `slurp` | Wayland region selector | `pacman -S slurp` |
+| `tesseract` | OCR engine | `pacman -S tesseract` |
+| `wl-clipboard` | Clipboard integration (`wl-copy`) | `pacman -S wl-clipboard` |
+| `fuzzel` or `wofi` | Action menu backend | `pacman -S fuzzel` or `pacman -S wofi` |
 
 ## Installation
 
@@ -63,6 +66,13 @@ This will:
 ```bash
 cargo install --path crates/pixelens
 cargo install --path crates/pixelensd
+```
+
+### Verify installation
+
+```bash
+pixelens version
+pixelensd --version
 ```
 
 ### Uninstall
@@ -173,6 +183,100 @@ API keys can be provided via:
 
 The environment variable takes precedence and is not saved to the config file.
 
+## Compositor Keybindings
+
+Since global hotkeys are not reliably supported across Wayland compositors, Pixelens uses compositor-level keybindings to trigger capture.
+
+### Hyprland
+
+Add to `~/.config/hypr/hyprland.conf`:
+
+```
+# Pixelens keybindings
+bind = SUPER SHIFT, S, exec, pixelens grab
+bind = SUPER SHIFT, C, exec, pixelens copy
+bind = SUPER SHIFT, F, exec, pixelens search
+bind = SUPER SHIFT, A, exec, pixelens ai
+bind = SUPER SHIFT, T, exec, pixelens translate
+bind = SUPER SHIFT, I, exec, pixelens image
+```
+
+### Niri
+
+Add to `~/.config/niri/config.kdl`:
+
+```kdl
+binds {
+    Mod+Shift+S { spawn "pixelens" "grab"; }
+    Mod+Shift+C { spawn "pixelens" "copy"; }
+    Mod+Shift+F { spawn "pixelens" "search"; }
+    Mod+Shift+A { spawn "pixelens" "ai"; }
+    Mod+Shift+T { spawn "pixelens" "translate"; }
+    Mod+Shift+I { spawn "pixelens" "image"; }
+}
+```
+
+### Sway
+
+Add to `~/.config/sway/config`:
+
+```
+# Pixelens keybindings
+bindsym $mod+Shift+s exec pixelens grab
+bindsym $mod+Shift+c exec pixelens copy
+bindsym $mod+Shift+f exec pixelens search
+bindsym $mod+Shift+a exec pixelens ai
+bindsym $mod+Shift+t exec pixelens translate
+bindsym $mod+Shift+i exec pixelens image
+```
+
+After adding keybindings, reload your compositor configuration.
+
+## Troubleshooting
+
+### "command not found: pixelens"
+
+- Ensure `~/.local/bin` is in your PATH
+- Run `source ~/.bashrc` or `source ~/.zshrc` after installation
+- Verify binary exists: `ls ~/.local/bin/pixelens`
+
+### "Daemon not running"
+
+- Start the daemon: `pixelens daemon start`
+- Or via systemd: `systemctl --user start pixelensd`
+- Check status: `pixelens daemon status`
+
+### "slurp does not open"
+
+- Verify slurp is installed: `which slurp`
+- Verify you are in a Wayland session
+- Check compositor is running: `echo $WAYLAND_DISPLAY`
+
+### "OCR returns bad text"
+
+- Verify tesseract is installed: `tesseract --version`
+- Check language support: `tesseract --list-langs`
+- Ensure captured image has sufficient contrast
+
+### "Action menu does not open"
+
+- Verify menu backend is installed: `which fuzzel` or `which wofi`
+- Check menu_backend setting: `pixelens config`
+- Try setting `menu_backend` to `stdin` as fallback
+
+### "Browser does not open"
+
+- Verify xdg-open is available: `which xdg-open`
+- Ensure a default browser is configured
+- Check `xdg-settings get default-web-browser`
+
+### "Image search only opens upload page"
+
+This is expected default behavior. To enable automatic upload:
+1. Configure `image_upload_provider` in `~/.config/pixelens/config.json`
+2. Set `image_upload_url` to your upload endpoint
+3. Note: Automatic upload sends screenshots to external services
+
 ## Development
 
 ```bash
@@ -192,42 +296,3 @@ cargo build --workspace
 ## License
 
 MIT
-
-## Compositor Keybindings
-
-Since global hotkeys are not reliably supported across Wayland compositors, Pixelens uses compositor-level keybindings to trigger capture.
-
-### Hyprland
-
-Add to `~/.config/hypr/hyprland.conf`:
-
-```
-bind = SUPER SHIFT, S, exec, pixelens grab
-bind = SUPER SHIFT, C, exec, pixelens copy
-bind = SUPER SHIFT, F, exec, pixelens search
-bind = SUPER SHIFT, A, exec, pixelens ai
-```
-
-### Niri
-
-Add to `~/.config/niri/config.kdl`:
-
-```kdl
-binds {
-    Mod+Shift+S { spawn "pixelens" "grab"; }
-    Mod+Shift+C { spawn "pixelens" "copy"; }
-    Mod+Shift+F { spawn "pixelens" "search"; }
-    Mod+Shift+A { spawn "pixelens" "ai"; }
-}
-```
-
-### Sway
-
-Add to `~/.config/sway/config`:
-
-```
-bindsym $mod+Shift+s exec pixelens grab
-bindsym $mod+Shift+c exec pixelens copy
-bindsym $mod+Shift+f exec pixelens search
-bindsym $mod+Shift+a exec pixelens ai
-```
