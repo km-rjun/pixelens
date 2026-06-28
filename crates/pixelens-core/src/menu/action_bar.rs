@@ -1,67 +1,14 @@
-use eframe::egui;
+#[cfg(feature = "layer-shell")]
+use gtk::prelude::*;
+#[cfg(feature = "layer-shell")]
+use gtk::{self, glib, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation};
+#[cfg(feature = "layer-shell")]
+use gtk4_layer_shell::{Edge, Layer, LayerShell};
+#[cfg(feature = "layer-shell")]
 use std::sync::mpsc;
 
 use crate::error::PixelensError;
 use crate::menu::{MenuBackend, MenuChoice};
-
-struct ActionBarApp {
-    tx: mpsc::Sender<MenuChoice>,
-}
-
-impl eframe::App for ActionBarApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.heading("Action");
-                ui.separator();
-
-                if ui.button("[C] Copy").clicked() {
-                    let _ = self.tx.send(MenuChoice::Copy);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-
-                if ui.button("[S] Search").clicked() {
-                    let _ = self.tx.send(MenuChoice::Search);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-
-                if ui.button("[A] Ask AI").clicked() {
-                    let _ = self.tx.send(MenuChoice::Ai);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-
-                if ui.button("[T] Translate").clicked() {
-                    let _ = self.tx.send(MenuChoice::Translate);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-
-                if ui.button("[Esc] Cancel").clicked() {
-                    let _ = self.tx.send(MenuChoice::Cancel);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
-        });
-
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            let _ = self.tx.send(MenuChoice::Cancel);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-
-        for key in [
-            (egui::Key::C, MenuChoice::Copy),
-            (egui::Key::S, MenuChoice::Search),
-            (egui::Key::A, MenuChoice::Ai),
-            (egui::Key::T, MenuChoice::Translate),
-        ] {
-            if ctx.input(|i| i.key_pressed(key.0)) {
-                let _ = self.tx.send(key.1);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-        }
-    }
-}
-
-pub struct ActionBar;
 
 pub struct ActionBarBackend {
     rx: std::sync::mpsc::Receiver<MenuChoice>,
@@ -79,58 +26,113 @@ impl MenuBackend for ActionBarBackend {
     }
 }
 
-fn build_viewport_options() -> eframe::NativeOptions {
-    let size = [280.0, 44.0];
-    eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Pixelens Action Bar")
-            .with_inner_size(size)
-            .with_min_inner_size(size)
-            .with_max_inner_size(size)
-            .with_resizable(false)
-            .with_decorations(true)
-            .with_transparent(false)
-            .with_taskbar(false)
-            .with_titlebar_shown(true)
-            .with_titlebar_buttons_shown(false),
-        ..Default::default()
+#[cfg(feature = "layer-shell")]
+fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) {
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Pixelens Action Bar")
+        .default_width(280)
+        .default_height(44)
+        .resizable(false)
+        .decorated(true)
+        .build();
+
+    window.init_layer_shell();
+    window.set_layer(Layer::Overlay);
+    window.set_keyboard_interactivity(true);
+    window.set_exclusive_zone(-1);
+
+    let content_box = GtkBox::new(Orientation::Horizontal, 8);
+    content_box.set_margin_top(4);
+    content_box.set_margin_bottom(4);
+    content_box.set_margin_start(8);
+    content_box.set_margin_end(8);
+
+    let title = Label::new(Some("Action:"));
+    content_box.append(&title);
+
+    let actions = [
+        ("[C] Copy", MenuChoice::Copy),
+        ("[S] Search", MenuChoice::Search),
+        ("[A] Ask AI", MenuChoice::Ai),
+        ("[T] Translate", MenuChoice::Translate),
+        ("[Esc] Cancel", MenuChoice::Cancel),
+    ];
+
+    for (label_text, choice) in actions {
+        let button = Button::builder().label(label_text).build();
+        let tx_clone = tx.clone();
+        let app_clone = app.clone();
+        button.connect_clicked(move |_| {
+            let _ = tx_clone.send(choice);
+            app_clone.quit();
+        });
+        content_box.append(&button);
     }
+
+    window.set_child(Some(&content_box));
+    window.present();
 }
 
 pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
-    let (tx, rx) = mpsc::channel();
+    #[cfg(feature = "layer-shell")]
+    {
+        let (tx, rx) = mpsc::channel();
 
-    let app = ActionBarApp { tx };
+        let app = Application::builder()
+            .application_id("com.pixelens.action-bar")
+            .build();
 
-    let result = eframe::run_native(
-        "Pixelens Action Bar",
-        build_viewport_options(),
-        Box::new(|_cc| Ok(Box::new(app))),
-    );
+        let tx_clone = tx.clone();
+        app.connect_activate(move |app| {
+            build_action_bar(app, tx_clone.clone());
+        });
 
-    match result {
-        Ok(()) => {}
-        Err(e) => {
-            log::warn!("Action bar window closed: {}", e);
-        }
+        app.run();
+
+        rx.recv()
+            .map_err(|e| PixelensError::Config(format!("Menu channel closed: {}", e)))
     }
 
-    rx.recv()
-        .map_err(|e| PixelensError::Config(format!("Menu channel closed: {}", e)))
+    #[cfg(not(feature = "layer-shell"))]
+    {
+        Err(PixelensError::Config(
+            "Graphical action bar requires layer-shell support. \
+             Install gtk4-layer-shell or run with --features layer-shell"
+                .to_string(),
+        ))
+    }
 }
 
 pub fn create_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let app = ActionBarApp { tx };
-        let _ = eframe::run_native(
-            "Pixelens Action Bar",
-            build_viewport_options(),
-            Box::new(|_cc| Ok(Box::new(app))),
-        );
-    });
+    #[cfg(feature = "layer-shell")]
+    {
+        let (tx, rx) = mpsc::channel();
 
-    Ok(Box::new(ActionBarBackend { rx }))
+        std::thread::spawn(move || {
+            let app = Application::builder()
+                .application_id("com.pixelens.action-bar")
+                .build();
+
+            let tx_clone = tx.clone();
+            app.connect_activate(move |app| {
+                build_action_bar(app, tx_clone.clone());
+            });
+
+            app.run();
+        });
+
+        Ok(Box::new(ActionBarBackend { rx }))
+    }
+
+    #[cfg(not(feature = "layer-shell"))]
+    {
+        Err(PixelensError::Config(
+            "Graphical action bar requires layer-shell support. \
+             Install gtk4-layer-shell or run with --features layer-shell"
+                .to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -140,14 +142,14 @@ mod tests {
     #[test]
     fn test_action_bar_name() {
         let backend = ActionBarBackend {
-            rx: mpsc::channel().1,
+            rx: std::sync::mpsc::channel().1,
         };
         assert_eq!(backend.name(), "action_bar");
     }
 
     #[test]
     fn test_menu_choice_dispatch() {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel();
 
         tx.send(MenuChoice::Copy).unwrap();
         assert_eq!(rx.recv().unwrap(), MenuChoice::Copy);
@@ -174,13 +176,5 @@ mod tests {
         assert_eq!(MenuChoice::from_key("escape"), Some(MenuChoice::Cancel));
         assert_eq!(MenuChoice::from_key("q"), Some(MenuChoice::Cancel));
         assert_eq!(MenuChoice::from_key("x"), None);
-    }
-
-    #[test]
-    fn test_action_bar_window_size() {
-        let options = build_viewport_options();
-        let size = options.viewport.inner_size.unwrap();
-        assert_eq!(size[0], 280.0);
-        assert_eq!(size[1], 44.0);
     }
 }
