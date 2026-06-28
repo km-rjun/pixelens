@@ -28,6 +28,8 @@ impl MenuBackend for ActionBarBackend {
 
 #[cfg(feature = "layer-shell")]
 fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) {
+    log::debug!("Building action bar window");
+
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Pixelens Action Bar")
@@ -64,6 +66,7 @@ fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) 
         let tx_clone = tx.clone();
         let app_clone = app.clone();
         button.connect_clicked(move |_| {
+            log::debug!("Button clicked: {:?}", choice);
             let _ = tx_clone.send(choice.clone());
             app_clone.quit();
         });
@@ -72,6 +75,7 @@ fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) 
 
     window.add(&content_box);
     window.show_all();
+    log::debug!("Action bar window presented");
 }
 
 pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
@@ -79,17 +83,21 @@ pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
     {
         let (tx, rx) = mpsc::channel();
 
+        log::debug!("Creating GTK application");
         let app = Application::builder()
             .application_id("com.pixelens.action-bar")
             .build();
 
         let tx_clone = tx.clone();
         app.connect_activate(move |app| {
+            log::debug!("Activate callback fired");
             build_action_bar(app, tx_clone.clone());
         });
 
+        log::debug!("Running GTK application");
         app.run();
 
+        log::debug!("GTK application exited, receiving from channel");
         rx.recv()
             .map_err(|e| PixelensError::Config(format!("Menu channel closed: {}", e)))
     }
