@@ -6,7 +6,69 @@ use crate::actions::ActionHandler;
 use crate::error::PixelensError;
 use crate::types::{ActionPayload, ActionType};
 
-pub struct ReverseImageHandler;
+pub trait ClipboardCopier {
+    fn copy_image(&self, path: &str) -> Result<(), String>;
+}
+
+pub struct WlCopyClipboard;
+
+impl ClipboardCopier for WlCopyClipboard {
+    fn copy_image(&self, path: &str) -> Result<(), String> {
+        let status = Command::new("wl-copy")
+            .args(["--type", "image/png"])
+            .arg(path)
+            .status()
+            .map_err(|e| format!("Failed to run wl-copy: {}", e))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("wl-copy exited with status: {}", status))
+        }
+    }
+}
+
+pub trait BrowserOpener {
+    fn open(&self, url: &str) -> Result<(), String>;
+}
+
+pub struct XdgBrowserOpener;
+
+impl BrowserOpener for XdgBrowserOpener {
+    fn open(&self, url: &str) -> Result<(), String> {
+        let status = Command::new("xdg-open")
+            .arg(url)
+            .status()
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("xdg-open exited with status: {}", status))
+        }
+    }
+}
+
+pub struct ReverseImageHandler<
+    C: ClipboardCopier = WlCopyClipboard,
+    B: BrowserOpener = XdgBrowserOpener,
+> {
+    clipboard: C,
+    browser: B,
+}
+
+impl<C: ClipboardCopier, B: BrowserOpener> ReverseImageHandler<C, B> {
+    pub fn new(clipboard: C, browser: B) -> Self {
+        Self { clipboard, browser }
+    }
+}
+
+impl Default for ReverseImageHandler<WlCopyClipboard, XdgBrowserOpener> {
+    fn default() -> Self {
+        Self {
+            clipboard: WlCopyClipboard,
+            browser: XdgBrowserOpener,
+        }
+    }
+}
 
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
@@ -34,29 +96,7 @@ pub fn save_to_cache(image_path: &str) -> Result<PathBuf, PixelensError> {
     Ok(dest)
 }
 
-pub fn open_reverse_image_search(image_path: &str) -> Result<(), PixelensError> {
-    let _ = image_path;
-    let status = Command::new("xdg-open")
-        .arg("https://lens.google.com/uploadbyurl")
-        .status()
-        .map_err(|e| {
-            PixelensError::Config(format!(
-                "Failed to open browser: {}. Is xdg-open installed?",
-                e
-            ))
-        })?;
-
-    if !status.success() {
-        return Err(PixelensError::Config(format!(
-            "Browser exited with status: {}",
-            status
-        )));
-    }
-
-    Ok(())
-}
-
-impl ActionHandler for ReverseImageHandler {
+impl<C: ClipboardCopier, B: BrowserOpener> ActionHandler for ReverseImageHandler<C, B> {
     fn execute(&self, payload: &ActionPayload) -> Result<String, PixelensError> {
         let image_path = payload.image_path.as_ref().ok_or_else(|| {
             PixelensError::Config("No image provided for reverse search".to_string())
@@ -70,9 +110,18 @@ impl ActionHandler for ReverseImageHandler {
         }
 
         let saved_path = save_to_cache(image_path)?;
-        open_reverse_image_search(saved_path.to_str().unwrap_or(""))?;
+        let saved_str = saved_path.to_string_lossy().to_string();
 
-        Ok(saved_path.to_string_lossy().to_string())
+        let _ = self.clipboard.copy_image(&saved_str);
+
+        self.browser
+            .open("https://lens.google.com/uploadbyurl")
+            .map_err(PixelensError::Config)?;
+
+        Ok(format!(
+            "Image saved to: {}\nImage copied to clipboard. Paste it into the opened page if upload is not automatic.",
+            saved_str
+        ))
     }
 
     fn action_type(&self) -> ActionType {
@@ -82,7 +131,64 @@ impl ActionHandler for ReverseImageHandler {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use super::*;
+
+    struct MockClipboard {
+        last_path: RefCell<Option<String>>,
+        should_fail: bool,
+    }
+
+    impl MockClipboard {
+        fn new(should_fail: bool) -> Self {
+            Self {
+                last_path: RefCell::new(None),
+                should_fail,
+            }
+        }
+    }
+
+    impl ClipboardCopier for MockClipboard {
+        fn copy_image(&self, path: &str) -> Result<(), String> {
+            *self.last_path.borrow_mut() = Some(path.to_string());
+            if self.should_fail {
+                Err("mock clipboard failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    struct MockBrowser {
+        last_url: Rc<RefCell<Option<String>>>,
+        should_fail: bool,
+    }
+
+    impl MockBrowser {
+        fn new(should_fail: bool) -> Self {
+            Self {
+                last_url: Rc::new(RefCell::new(None)),
+                should_fail,
+            }
+        }
+
+        fn shared_url(&self) -> Rc<RefCell<Option<String>>> {
+            self.last_url.clone()
+        }
+    }
+
+    impl BrowserOpener for MockBrowser {
+        fn open(&self, url: &str) -> Result<(), String> {
+            *self.last_url.borrow_mut() = Some(url.to_string());
+            if self.should_fail {
+                Err("mock browser failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
 
     #[test]
     fn test_cache_dir() {
@@ -113,7 +219,10 @@ mod tests {
 
     #[test]
     fn test_action_type() {
-        let handler = ReverseImageHandler;
+        let handler = ReverseImageHandler::<MockClipboard, MockBrowser>::new(
+            MockClipboard::new(false),
+            MockBrowser::new(false),
+        );
         assert!(matches!(
             handler.action_type(),
             ActionType::ReverseImageSearch
@@ -122,7 +231,10 @@ mod tests {
 
     #[test]
     fn test_execute_missing_image_path() {
-        let handler = ReverseImageHandler;
+        let handler = ReverseImageHandler::<MockClipboard, MockBrowser>::new(
+            MockClipboard::new(false),
+            MockBrowser::new(false),
+        );
         let payload = ActionPayload {
             text: String::new(),
             image_path: None,
@@ -133,7 +245,10 @@ mod tests {
 
     #[test]
     fn test_execute_missing_file() {
-        let handler = ReverseImageHandler;
+        let handler = ReverseImageHandler::<MockClipboard, MockBrowser>::new(
+            MockClipboard::new(false),
+            MockBrowser::new(false),
+        );
         let payload = ActionPayload {
             text: String::new(),
             image_path: Some("/tmp/nonexistent_file_xyz.png".to_string()),
@@ -144,7 +259,10 @@ mod tests {
 
     #[test]
     fn test_execute_no_ocr() {
-        let handler = ReverseImageHandler;
+        let handler = ReverseImageHandler::<MockClipboard, MockBrowser>::new(
+            MockClipboard::new(false),
+            MockBrowser::new(false),
+        );
         let payload = ActionPayload {
             text: String::new(),
             image_path: None,
@@ -153,5 +271,90 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(!err.contains("OCR"), "Should not involve OCR");
+    }
+
+    #[test]
+    fn test_execute_copies_image_to_clipboard() {
+        let tmp = std::env::temp_dir().join("pixelens_test_clipboard.png");
+        fs::write(&tmp, b"test image data").unwrap();
+
+        let clipboard = MockClipboard::new(false);
+        let browser = MockBrowser::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
+
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(msg.contains("Image copied to clipboard"));
+
+        fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_execute_opens_upload_page() {
+        let tmp = std::env::temp_dir().join("pixelens_test_upload.png");
+        fs::write(&tmp, b"test image data").unwrap();
+
+        let clipboard = MockClipboard::new(false);
+        let browser = MockBrowser::new(false);
+        let url_tracker = browser.shared_url();
+        let handler = ReverseImageHandler::new(clipboard, browser);
+
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok());
+        assert_eq!(
+            *url_tracker.borrow(),
+            Some("https://lens.google.com/uploadbyurl".to_string())
+        );
+
+        fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_execute_browser_failure_still_saves() {
+        let tmp = std::env::temp_dir().join("pixelens_test_browser_fail.png");
+        fs::write(&tmp, b"test image data").unwrap();
+
+        let clipboard = MockClipboard::new(false);
+        let browser = MockBrowser::new(true);
+        let handler = ReverseImageHandler::new(clipboard, browser);
+
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_err());
+
+        fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_execute_clipboard_failure_still_saves() {
+        let tmp = std::env::temp_dir().join("pixelens_test_clipboard_fail.png");
+        fs::write(&tmp, b"test image data").unwrap();
+
+        let clipboard = MockClipboard::new(true);
+        let browser = MockBrowser::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
+
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(msg.contains("Image saved to"));
+
+        fs::remove_file(&tmp).ok();
     }
 }
