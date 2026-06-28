@@ -39,10 +39,12 @@ pub fn open_reverse_image_search(image_path: &str) -> Result<(), PixelensError> 
     let status = Command::new("xdg-open")
         .arg("https://lens.google.com/uploadbyurl")
         .status()
-        .map_err(|e| PixelensError::Config(format!(
-            "Failed to open browser: {}. Is xdg-open installed?",
-            e
-        )))?;
+        .map_err(|e| {
+            PixelensError::Config(format!(
+                "Failed to open browser: {}. Is xdg-open installed?",
+                e
+            ))
+        })?;
 
     if !status.success() {
         return Err(PixelensError::Config(format!(
