@@ -7,4 +7,6 @@ pub mod hotkey;
 pub mod ipc;
 pub mod menu;
 pub mod ocr;
+pub mod search;
 pub mod types;
+pub mod upload;

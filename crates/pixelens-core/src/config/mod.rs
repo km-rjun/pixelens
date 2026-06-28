@@ -13,6 +13,8 @@ pub struct Config {
     pub ocr_language: String,
     pub hotkey: String,
     pub menu_backend: String,
+    pub image_upload_provider: String,
+    pub reverse_image_provider: String,
 }
 
 impl Default for Config {
@@ -24,6 +26,8 @@ impl Default for Config {
             ocr_language: "eng".to_string(),
             hotkey: "Ctrl+Shift+C".to_string(),
             menu_backend: "auto".to_string(),
+            image_upload_provider: "0x0".to_string(),
+            reverse_image_provider: "google_lens".to_string(),
         }
     }
 }
@@ -96,6 +100,8 @@ mod tests {
         assert_eq!(config.model, "gpt-4o");
         assert_eq!(config.ocr_language, "eng");
         assert_eq!(config.menu_backend, "auto");
+        assert_eq!(config.image_upload_provider, "0x0");
+        assert_eq!(config.reverse_image_provider, "google_lens");
     }
 
     #[test]
