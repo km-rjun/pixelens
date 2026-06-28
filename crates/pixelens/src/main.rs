@@ -148,22 +148,7 @@ async fn cmd_grab() -> i32 {
         Err(code) => return code,
     };
 
-    let config = pixelens_core::config::Config::load();
-    let backend = if config.menu_backend == "auto" {
-        pixelens_core::menu::detect_backend()
-    } else {
-        pixelens_core::menu::create_backend(&config.menu_backend)
-    };
-
-    let backend = match backend {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("Menu error: {}", e);
-            return 1;
-        }
-    };
-
-    let choice = match backend.show_menu(&text) {
+    let choice = match pixelens_core::menu::action_bar::show_action_bar() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Menu error: {}", e);

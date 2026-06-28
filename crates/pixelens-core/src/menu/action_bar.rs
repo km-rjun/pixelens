@@ -79,9 +79,34 @@ impl MenuBackend for ActionBarBackend {
     }
 }
 
-pub fn run_action_bar() -> Result<Box<dyn MenuBackend>, PixelensError> {
+pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
     let (tx, rx) = mpsc::channel();
 
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([250.0, 40.0])
+            .with_decorations(false)
+            .with_transparent(true),
+        ..Default::default()
+    };
+
+    let app = ActionBarApp { tx };
+
+    let result = eframe::run_native("Action Bar", options, Box::new(|_cc| Ok(Box::new(app))));
+
+    match result {
+        Ok(()) => {}
+        Err(e) => {
+            log::warn!("Action bar window closed: {}", e);
+        }
+    }
+
+    rx.recv()
+        .map_err(|e| PixelensError::Config(format!("Menu channel closed: {}", e)))
+}
+
+pub fn create_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
+    let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
@@ -90,10 +115,8 @@ pub fn run_action_bar() -> Result<Box<dyn MenuBackend>, PixelensError> {
                 .with_transparent(true),
             ..Default::default()
         };
-
         let app = ActionBarApp { tx };
-
-        eframe::run_native("Action Bar", options, Box::new(|_cc| Ok(Box::new(app)))).ok();
+        let _ = eframe::run_native("Action Bar", options, Box::new(|_cc| Ok(Box::new(app))));
     });
 
     Ok(Box::new(ActionBarBackend { rx }))
@@ -109,5 +132,36 @@ mod tests {
             rx: mpsc::channel().1,
         };
         assert_eq!(backend.name(), "action_bar");
+    }
+
+    #[test]
+    fn test_menu_choice_dispatch() {
+        let (tx, rx) = mpsc::channel();
+
+        tx.send(MenuChoice::Copy).unwrap();
+        assert_eq!(rx.recv().unwrap(), MenuChoice::Copy);
+
+        tx.send(MenuChoice::Search).unwrap();
+        assert_eq!(rx.recv().unwrap(), MenuChoice::Search);
+
+        tx.send(MenuChoice::Ai).unwrap();
+        assert_eq!(rx.recv().unwrap(), MenuChoice::Ai);
+
+        tx.send(MenuChoice::Translate).unwrap();
+        assert_eq!(rx.recv().unwrap(), MenuChoice::Translate);
+
+        tx.send(MenuChoice::Cancel).unwrap();
+        assert_eq!(rx.recv().unwrap(), MenuChoice::Cancel);
+    }
+
+    #[test]
+    fn test_menu_choice_from_key() {
+        assert_eq!(MenuChoice::from_key("c"), Some(MenuChoice::Copy));
+        assert_eq!(MenuChoice::from_key("s"), Some(MenuChoice::Search));
+        assert_eq!(MenuChoice::from_key("a"), Some(MenuChoice::Ai));
+        assert_eq!(MenuChoice::from_key("t"), Some(MenuChoice::Translate));
+        assert_eq!(MenuChoice::from_key("escape"), Some(MenuChoice::Cancel));
+        assert_eq!(MenuChoice::from_key("q"), Some(MenuChoice::Cancel));
+        assert_eq!(MenuChoice::from_key("x"), None);
     }
 }
