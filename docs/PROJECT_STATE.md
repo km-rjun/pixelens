@@ -22,6 +22,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - `pixelens search` returning search URL and opening browser
 - `pixelens ai` sending text and image to configured AI provider (if model supports vision)
 - `pixelens translate` translating OCR text
+- `pixelens image` saving captured image and opening Google Lens upload page
 - Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
 - Vision model detection for AI image input
@@ -39,7 +40,7 @@ All commands are selection-first. Typed positional text is not the normal input 
 | `pixelens search` | Select region, OCR, return search URL |
 | `pixelens ai` | Select region, OCR, send text+image to AI (if model supports vision) |
 | `pixelens translate` | Select region, OCR, translate (optional `--to`) |
-| `pixelens image` | Not implemented (returns error) |
+| `pixelens image` | Select region, save image, open Google Lens upload page |
 | `pixelens daemon start` | Start pixelensd if not running |
 | `pixelens daemon status` | Check daemon via IPC |
 | `pixelens daemon stop` | Graceful shutdown via IPC |
@@ -63,7 +64,7 @@ Configure via `menu_backend` in config (default: "auto").
 
 ## Known Limitations
 
-- Reverse-image search incomplete (returns "not implemented")
+- Automatic reverse image upload not implemented (opens upload page only)
 - Compositor keybindings currently provide the reliable Wayland trigger mechanism
 - OCR may preserve layout artifacts from Tesseract
 
@@ -78,5 +79,4 @@ See `docs/ROADMAP.md` for full roadmap.
 - No new frontend framework
 - No broad OCR tuning
 - No macOS implementation
-- No reverse-image upload implementation
 - No unrelated refactoring
