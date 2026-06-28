@@ -33,12 +33,12 @@ pub trait MenuBackend {
 }
 
 pub fn detect_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
-    Ok(Box::new(action_bar::ActionBar))
+    action_bar::run_action_bar()
 }
 
 pub fn create_backend(name: &str) -> Result<Box<dyn MenuBackend>, PixelensError> {
     match name {
-        "action_bar" | "built-in" | "auto" => Ok(Box::new(action_bar::ActionBar)),
+        "action_bar" | "graphical" | "auto" => action_bar::run_action_bar(),
         "fuzzel" => Ok(Box::new(fuzzel::FuzzelMenu)),
         "wofi" => Ok(Box::new(wofi::WofiMenu)),
         "stdin" => Ok(Box::new(stdin::StdinMenu)),
