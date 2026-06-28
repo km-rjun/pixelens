@@ -25,6 +25,12 @@ pixelens/
 │   ├── pixelens/           # CLI binary
 │   ├── pixelensd/          # Daemon binary (single source of truth)
 │   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, menu, upload, search)
+├── scripts/
+│   ├── install.sh          # Local installation script
+│   └── uninstall.sh        # Uninstall script
+├── packaging/
+│   └── systemd/
+│       └── pixelensd.service  # Systemd user service
 ├── docs/
 ├── Cargo.toml              # Workspace root
 └── README.md
@@ -41,10 +47,31 @@ pixelens/
 
 ## Installation
 
+### Quick install (recommended)
+
+```bash
+./scripts/install.sh
+```
+
+This will:
+- Build release binaries
+- Install `pixelens` and `pixelensd` to `~/.local/bin`
+- Create config and cache directories
+
+### Manual install
+
 ```bash
 cargo install --path crates/pixelens
 cargo install --path crates/pixelensd
 ```
+
+### Uninstall
+
+```bash
+./scripts/uninstall.sh
+```
+
+This removes binaries from `~/.local/bin` but preserves your config.
 
 ## Usage
 
@@ -88,6 +115,24 @@ pixelens config --endpoint https://api.openai.com/v1 --model gpt-4o
 
 # Show version
 pixelens version
+```
+
+## Daemon Service
+
+Pixelens can run as a systemd user service:
+
+```bash
+# Install the service file
+cp packaging/systemd/pixelensd.service ~/.config/systemd/user/
+
+# Reload systemd
+systemctl --user daemon-reload
+
+# Enable and start the service
+systemctl --user enable --now pixelensd
+
+# Check status
+systemctl --user status pixelensd
 ```
 
 ## Configuration
