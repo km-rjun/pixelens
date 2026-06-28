@@ -20,7 +20,7 @@ Build a Linux-native visual search and OCR utility that lets users select screen
 
 ## Post-MVP (In Progress)
 
-- [ ] Custom upload provider support for reverse image search
+- [x] Custom upload provider support for reverse image search
 - [ ] Ask AI with screenshot input (partial: vision model detection done, needs verification)
 - [ ] Translate with screenshot context (currently text-only)
 - [ ] Improve action menu UX (currently functional)

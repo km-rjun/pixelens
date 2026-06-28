@@ -14,6 +14,7 @@ pub struct Config {
     pub hotkey: String,
     pub menu_backend: String,
     pub image_upload_provider: String,
+    pub image_upload_url: String,
     pub reverse_image_provider: String,
 }
 
@@ -27,6 +28,7 @@ impl Default for Config {
             hotkey: "Ctrl+Shift+C".to_string(),
             menu_backend: "auto".to_string(),
             image_upload_provider: String::new(),
+            image_upload_url: String::new(),
             reverse_image_provider: "google_lens".to_string(),
         }
     }
@@ -101,6 +103,7 @@ mod tests {
         assert_eq!(config.ocr_language, "eng");
         assert_eq!(config.menu_backend, "auto");
         assert_eq!(config.image_upload_provider, "");
+        assert_eq!(config.image_upload_url, "");
         assert_eq!(config.reverse_image_provider, "google_lens");
     }
 

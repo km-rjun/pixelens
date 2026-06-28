@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::actions::ActionHandler;
+use crate::config::Config;
 use crate::error::PixelensError;
 use crate::types::{ActionPayload, ActionType};
+use crate::upload::{create_uploader, ImageUploader};
 
 pub trait ClipboardCopier {
     fn copy_image(&self, path: &str) -> Result<(), String>;
@@ -114,22 +116,81 @@ impl<C: ClipboardCopier, B: BrowserOpener> ActionHandler for ReverseImageHandler
 
         let _ = self.clipboard.copy_image(&saved_str);
 
-        self.browser
-            .open("https://lens.google.com/uploadbyurl")
-            .map_err(|e| {
-                log::warn!("Browser open failed: {}", e);
-                PixelensError::Config(format!("Failed to open browser: {}", e))
-            })?;
+        let config = Config::load();
+
+        if config.image_upload_provider.is_empty() {
+            self.browser
+                .open("https://lens.google.com/uploadbyurl")
+                .map_err(|e| {
+                    log::warn!("Browser open failed: {}", e);
+                    PixelensError::Config(format!("Failed to open browser: {}", e))
+                })?;
+
+            return Ok(format!(
+                "Image saved: {}\nOpened Google Lens upload page.\nAutomatic upload is not enabled. Upload the saved image manually or configure an upload provider later.",
+                saved_str
+            ));
+        }
+
+        let uploader = create_uploader(
+            &config.image_upload_provider,
+            Some(&config.image_upload_url),
+        )?;
+        let public_url = uploader.upload(&saved_str)?;
+
+        let search_url = format!(
+            "https://lens.google.com/uploadbyurl?url={}",
+            urlencoding::encode(&public_url)
+        );
+
+        self.browser.open(&search_url).map_err(|e| {
+            log::warn!("Browser open failed: {}", e);
+            PixelensError::Config(format!("Failed to open browser: {}", e))
+        })?;
 
         Ok(format!(
-            "Image saved: {}\nOpened Google Lens upload page.\nAutomatic upload is not enabled. Upload the saved image manually or configure an upload provider later.",
-            saved_str
+            "Image uploaded to: {}\nSearch URL: {}\nOpened in browser.",
+            public_url, search_url
         ))
     }
 
     fn action_type(&self) -> ActionType {
         ActionType::ReverseImageSearch
     }
+}
+
+pub fn execute_reverse_image_search(
+    image_path: &str,
+    uploader: &dyn ImageUploader,
+    search_provider: &dyn crate::search::ReverseSearchProvider,
+    browser: &dyn BrowserOpener,
+) -> Result<String, PixelensError> {
+    if !std::path::Path::new(image_path).exists() {
+        return Err(PixelensError::Config(format!(
+            "Image file not found: {}",
+            image_path
+        )));
+    }
+
+    let saved_path = save_to_cache(image_path)?;
+    let saved_str = saved_path.to_string_lossy().to_string();
+
+    let public_url = uploader.upload(&saved_str)?;
+
+    let search_url = search_provider.search_url(&public_url)?;
+
+    browser.open(&search_url).map_err(|e| {
+        log::warn!("Browser open failed: {}", e);
+        PixelensError::Config(format!(
+            "Browser open failed: {}. Public image URL: {}. Reverse search URL: {}",
+            e, public_url, search_url
+        ))
+    })?;
+
+    Ok(format!(
+        "Image uploaded to: {}\nSearch URL: {}\nOpened in browser.",
+        public_url, search_url
+    ))
 }
 
 #[cfg(test)]
