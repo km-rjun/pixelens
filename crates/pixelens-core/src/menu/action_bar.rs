@@ -94,8 +94,9 @@ pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
             build_action_bar(app, tx_clone.clone());
         });
 
-        log::debug!("Running GTK application");
-        app.run();
+        log::debug!("Running GTK application with sanitized args");
+        let synthetic_args = ["pixelens-action-bar"];
+        app.run_with_args(&synthetic_args);
 
         log::debug!("GTK application exited, receiving from channel");
         rx.recv()
@@ -127,7 +128,8 @@ pub fn create_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
                 build_action_bar(app, tx_clone.clone());
             });
 
-            app.run();
+            let synthetic_args = ["pixelens-action-bar"];
+            app.run_with_args(&synthetic_args);
         });
 
         Ok(Box::new(ActionBarBackend { rx }))
