@@ -26,9 +26,10 @@ if pgrep -x pixelensd > /dev/null 2>&1; then
     sleep 1
 fi
 
-# Build release binaries
-echo "Building release binaries..."
-cargo build --release
+# Build release binaries with layer-shell support
+echo "Building release binaries with layer-shell support..."
+echo "  cargo build --release --workspace --features layer-shell"
+cargo build --release --workspace --features layer-shell
 
 # Copy binaries
 echo "Installing binaries to $INSTALL_DIR..."
@@ -43,6 +44,8 @@ if [ -f "$INSTALL_DIR/pixelens" ] && [ -f "$INSTALL_DIR/pixelensd" ]; then
     echo "Installed:"
     echo "  $INSTALL_DIR/pixelens"
     echo "  $INSTALL_DIR/pixelensd"
+    echo ""
+    echo "Built with layer-shell support: yes"
     echo ""
     echo "Config directory: $CONFIG_DIR"
     echo "Cache directory:  $CACHE_DIR"
@@ -77,7 +80,7 @@ fi
 echo ""
 echo "Next steps:"
 echo "  1. Ensure $INSTALL_DIR is in your PATH"
-echo "  2. Start the daemon: pixelensd daemon start"
+echo "  2. Start the daemon: pixelens daemon start"
 echo "  3. Use pixelens: pixelens grab"
 echo ""
 echo "Optional: Install as systemd user service:"

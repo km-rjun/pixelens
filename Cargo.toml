@@ -29,5 +29,4 @@ urlencoding = "2.1"
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 fastrand = "2"
-gtk = { version = "0.11", package = "gtk4" }
-gtk4-layer-shell = "0.8"
+gtk-layer-shell = "0.8"

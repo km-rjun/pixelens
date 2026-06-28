@@ -1,9 +1,9 @@
 #[cfg(feature = "layer-shell")]
 use gtk::prelude::*;
 #[cfg(feature = "layer-shell")]
-use gtk::{self, glib, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation};
+use gtk::{self, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation};
 #[cfg(feature = "layer-shell")]
-use gtk4_layer_shell::{Edge, Layer, LayerShell};
+use gtk_layer_shell::{Layer, LayerShell};
 #[cfg(feature = "layer-shell")]
 use std::sync::mpsc;
 
@@ -49,7 +49,7 @@ fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) 
     content_box.set_margin_end(8);
 
     let title = Label::new(Some("Action:"));
-    content_box.append(&title);
+    content_box.pack_start(&title, false, false, 0);
 
     let actions = [
         ("[C] Copy", MenuChoice::Copy),
@@ -64,14 +64,14 @@ fn build_action_bar(app: &Application, tx: std::sync::mpsc::Sender<MenuChoice>) 
         let tx_clone = tx.clone();
         let app_clone = app.clone();
         button.connect_clicked(move |_| {
-            let _ = tx_clone.send(choice);
+            let _ = tx_clone.send(choice.clone());
             app_clone.quit();
         });
-        content_box.append(&button);
+        content_box.pack_start(&button, false, false, 0);
     }
 
-    window.set_child(Some(&content_box));
-    window.present();
+    window.add(&content_box);
+    window.show_all();
 }
 
 pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
@@ -97,8 +97,8 @@ pub fn show_action_bar() -> Result<MenuChoice, PixelensError> {
     #[cfg(not(feature = "layer-shell"))]
     {
         Err(PixelensError::Config(
-            "Graphical action bar requires layer-shell support. \
-             Install gtk4-layer-shell or run with --features layer-shell"
+            "Pixelens was built without the Cargo feature `layer-shell`. \
+             Rebuild with: cargo build --release --workspace --features layer-shell"
                 .to_string(),
         ))
     }
@@ -128,8 +128,8 @@ pub fn create_backend() -> Result<Box<dyn MenuBackend>, PixelensError> {
     #[cfg(not(feature = "layer-shell"))]
     {
         Err(PixelensError::Config(
-            "Graphical action bar requires layer-shell support. \
-             Install gtk4-layer-shell or run with --features layer-shell"
+            "Pixelens was built without the Cargo feature `layer-shell`. \
+             Rebuild with: cargo build --release --workspace --features layer-shell"
                 .to_string(),
         ))
     }

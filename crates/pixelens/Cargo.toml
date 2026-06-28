@@ -10,6 +10,10 @@ description = "CLI for Pixelens"
 name = "pixelens"
 path = "src/main.rs"
 
+[features]
+default = []
+layer-shell = ["pixelens-core/layer-shell"]
+
 [dependencies]
 pixelens-core.workspace = true
 clap.workspace = true

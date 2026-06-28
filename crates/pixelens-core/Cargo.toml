@@ -8,7 +8,7 @@ description = "Core library for Pixelens"
 
 [features]
 default = []
-layer-shell = ["dep:gtk", "dep:gtk4-layer-shell"]
+layer-shell = ["dep:gtk", "dep:gtk-layer-shell"]
 
 [dependencies]
 serde.workspace = true
@@ -21,5 +21,5 @@ base64.workspace = true
 urlencoding.workspace = true
 tokio.workspace = true
 fastrand.workspace = true
-gtk = { workspace = true, optional = true }
-gtk4-layer-shell = { workspace = true, optional = true }
+gtk = { version = "0.18", package = "gtk", optional = true }
+gtk-layer-shell = { workspace = true, optional = true }
