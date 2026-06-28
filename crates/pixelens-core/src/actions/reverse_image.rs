@@ -3,11 +3,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::actions::ActionHandler;
-use crate::config::Config;
 use crate::error::PixelensError;
-use crate::search::{create_search_provider, ReverseSearchProvider};
 use crate::types::{ActionPayload, ActionType};
-use crate::upload::{create_uploader, ImageUploader};
 
 pub trait ClipboardCopier {
     fn copy_image(&self, path: &str) -> Result<(), String>;
@@ -112,30 +109,21 @@ impl<C: ClipboardCopier, B: BrowserOpener> ActionHandler for ReverseImageHandler
             )));
         }
 
-        let config = Config::load();
-
         let saved_path = save_to_cache(image_path)?;
         let saved_str = saved_path.to_string_lossy().to_string();
 
         let _ = self.clipboard.copy_image(&saved_str);
 
-        let uploader = create_uploader(&config.image_upload_provider)?;
-        let public_url = uploader.upload(&saved_str)?;
-
-        let search_provider = create_search_provider(&config.reverse_image_provider)?;
-        let search_url = search_provider.search_url(&public_url)?;
-
-        self.browser.open(&search_url).map_err(|e| {
-            log::warn!("Browser open failed: {}", e);
-            PixelensError::Config(format!(
-                "Browser open failed: {}. Public image URL: {}. Reverse search URL: {}",
-                e, public_url, search_url
-            ))
-        })?;
+        self.browser
+            .open("https://lens.google.com/uploadbyurl")
+            .map_err(|e| {
+                log::warn!("Browser open failed: {}", e);
+                PixelensError::Config(format!("Failed to open browser: {}", e))
+            })?;
 
         Ok(format!(
-            "Image uploaded to: {}\nSearch URL: {}\nOpened in browser.",
-            public_url, search_url
+            "Image saved: {}\nOpened Google Lens upload page.\nAutomatic upload is not enabled. Upload the saved image manually or configure an upload provider later.",
+            saved_str
         ))
     }
 
@@ -144,72 +132,12 @@ impl<C: ClipboardCopier, B: BrowserOpener> ActionHandler for ReverseImageHandler
     }
 }
 
-pub fn execute_reverse_image_search(
-    image_path: &str,
-    uploader: &dyn ImageUploader,
-    search_provider: &dyn ReverseSearchProvider,
-    browser: &dyn BrowserOpener,
-) -> Result<String, PixelensError> {
-    if !std::path::Path::new(image_path).exists() {
-        return Err(PixelensError::Config(format!(
-            "Image file not found: {}",
-            image_path
-        )));
-    }
-
-    let saved_path = save_to_cache(image_path)?;
-    let saved_str = saved_path.to_string_lossy().to_string();
-
-    let public_url = uploader.upload(&saved_str)?;
-
-    let search_url = search_provider.search_url(&public_url)?;
-
-    browser.open(&search_url).map_err(|e| {
-        log::warn!("Browser open failed: {}", e);
-        PixelensError::Config(format!(
-            "Browser open failed: {}. Public image URL: {}. Reverse search URL: {}",
-            e, public_url, search_url
-        ))
-    })?;
-
-    Ok(format!(
-        "Image uploaded to: {}\nSearch URL: {}\nOpened in browser.",
-        public_url, search_url
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::search::google_lens::GoogleLensProvider;
-
     use super::*;
-
-    struct MockUploader {
-        should_fail: bool,
-    }
-
-    impl MockUploader {
-        fn new(should_fail: bool) -> Self {
-            Self { should_fail }
-        }
-    }
-
-    impl ImageUploader for MockUploader {
-        fn upload(&self, _path: &str) -> Result<String, PixelensError> {
-            if self.should_fail {
-                Err(PixelensError::Config("Upload failed".to_string()))
-            } else {
-                Ok("https://example.com/uploaded.png".to_string())
-            }
-        }
-
-        fn name(&self) -> &str {
-            "mock"
-        }
-    }
 
     struct MockBrowser {
         last_url: Rc<RefCell<Option<String>>>,
@@ -340,120 +268,108 @@ mod tests {
     }
 
     #[test]
-    fn test_google_lens_rejects_file_urls() {
-        let provider = GoogleLensProvider::new();
-        let result = provider.search_url("file:///tmp/image.png");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not supported"));
-    }
+    fn test_saves_local_png() {
+        let tmp = std::env::temp_dir().join("pixelens_test_save.png");
+        fs::write(&tmp, b"test image data").unwrap();
 
-    #[test]
-    fn test_google_lens_rejects_empty() {
-        let provider = GoogleLensProvider::new();
-        let result = provider.search_url("");
-        assert!(result.is_err());
-    }
+        let browser = MockBrowser::new(false);
+        let clipboard = MockClipboard::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
 
-    #[test]
-    fn test_google_lens_accepts_public_url() {
-        let provider = GoogleLensProvider::new();
-        let result = provider.search_url("https://example.com/img.png");
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
         assert!(result.is_ok());
-        assert!(result.unwrap().contains("lens.google.com"));
+        let msg = result.unwrap();
+        assert!(msg.contains("Image saved:"));
+        assert!(msg.contains("reverse_search_"));
+
+        fs::remove_file(&tmp).ok();
     }
 
     #[test]
-    fn test_upload_failure() {
-        let uploader = MockUploader::new(true);
-        let result = uploader.upload("/tmp/test.png");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_upload_success() {
-        let uploader = MockUploader::new(false);
-        let result = uploader.upload("/tmp/test.png");
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("example.com"));
-    }
-
-    #[test]
-    fn test_execute_full_flow() {
-        let tmp = std::env::temp_dir().join("pixelens_test_full.png");
+    fn test_opens_google_lens_upload_page() {
+        let tmp = std::env::temp_dir().join("pixelens_test_lens.png");
         fs::write(&tmp, b"test image data").unwrap();
 
         let browser = MockBrowser::new(false);
         let url_tracker = browser.shared_url();
-        let uploader = MockUploader::new(false);
-        let search_provider = GoogleLensProvider::new();
+        let clipboard = MockClipboard::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
 
-        let result = execute_reverse_image_search(
-            tmp.to_str().unwrap(),
-            &uploader,
-            &search_provider,
-            &browser,
-        );
-
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
         assert!(result.is_ok());
-        let msg = result.unwrap();
-        assert!(msg.contains("Image uploaded to"));
-        assert!(msg.contains("lens.google.com"));
-
         let url = url_tracker.borrow();
-        assert!(url.is_some());
+        assert!(url.as_ref().unwrap().contains("lens.google.com"));
+        assert!(url.as_ref().unwrap().contains("uploadbyurl"));
 
         fs::remove_file(&tmp).ok();
     }
 
     #[test]
-    fn test_execute_upload_failure_returns_error() {
-        let tmp = std::env::temp_dir().join("pixelens_test_upload_err.png");
+    fn test_no_upload_made() {
+        let tmp = std::env::temp_dir().join("pixelens_test_no_upload.png");
         fs::write(&tmp, b"test image data").unwrap();
 
         let browser = MockBrowser::new(false);
-        let uploader = MockUploader::new(true);
-        let search_provider = GoogleLensProvider::new();
+        let clipboard = MockClipboard::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
 
-        let result = execute_reverse_image_search(
-            tmp.to_str().unwrap(),
-            &uploader,
-            &search_provider,
-            &browser,
-        );
-
-        assert!(result.is_err());
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(msg.contains("Automatic upload is not enabled"));
 
         fs::remove_file(&tmp).ok();
     }
 
     #[test]
-    fn test_execute_browser_failure_returns_error() {
+    fn test_browser_failure_returns_error() {
         let tmp = std::env::temp_dir().join("pixelens_test_browser_err.png");
         fs::write(&tmp, b"test image data").unwrap();
 
         let browser = MockBrowser::new(true);
-        let uploader = MockUploader::new(false);
-        let search_provider = GoogleLensProvider::new();
+        let clipboard = MockClipboard::new(false);
+        let handler = ReverseImageHandler::new(clipboard, browser);
 
-        let result = execute_reverse_image_search(
-            tmp.to_str().unwrap(),
-            &uploader,
-            &search_provider,
-            &browser,
-        );
-
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("example.com"));
 
         fs::remove_file(&tmp).ok();
     }
 
     #[test]
-    fn test_local_file_url_rejected() {
-        let provider = GoogleLensProvider::new();
-        let result = provider.search_url("file:///tmp/image.png");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not supported"));
+    fn test_clipboard_failure_still_saves() {
+        let tmp = std::env::temp_dir().join("pixelens_test_clip_fail.png");
+        fs::write(&tmp, b"test image data").unwrap();
+
+        let browser = MockBrowser::new(false);
+        let clipboard = MockClipboard::new(true);
+        let handler = ReverseImageHandler::new(clipboard, browser);
+
+        let payload = ActionPayload {
+            text: String::new(),
+            image_path: Some(tmp.to_str().unwrap().to_string()),
+        };
+        let result = handler.execute(&payload);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(msg.contains("Image saved:"));
+
+        fs::remove_file(&tmp).ok();
     }
 }

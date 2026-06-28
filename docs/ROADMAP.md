@@ -16,16 +16,18 @@ Build a Linux-native visual search and OCR utility that lets users select screen
 - [x] CLI with selection-first commands
 - [x] Menu backends (fuzzel, wofi, stdin)
 - [x] Compositor keybinding examples (Hyprland, Niri, Sway)
+- [x] Reverse image search: save PNG locally, open Google Lens upload page
 
 ## Post-MVP (In Progress)
 
+- [ ] Custom upload provider support for reverse image search
 - [ ] Ask AI with screenshot input (partial: vision model detection done, needs verification)
 - [ ] Translate with screenshot context (currently text-only)
 - [ ] Improve action menu UX (currently functional)
 
 ## Later / Exploratory
 
-- [ ] Reverse-image search (returns "not implemented")
+- [ ] Optional provider integrations (SerpAPI, Google Vision, Imgur)
 - [ ] X11 backend (grim/slurp alternative)
 - [ ] System tray integration
 - [ ] Daemon-managed global hotkeys (compositor keybindings recommended instead)

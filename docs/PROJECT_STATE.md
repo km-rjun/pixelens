@@ -8,7 +8,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 
 - `pixelens`: user-facing CLI and daemon controller
 - `pixelensd`: background daemon
-- `pixelens-core`: capture, OCR, actions, configuration, IPC, menu, and shared logic
+- `pixelens-core`: capture, OCR, actions, configuration, IPC, menu, upload, search, and shared logic
 
 ## Current Working Functionality
 
@@ -22,7 +22,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - `pixelens search` returning search URL and opening browser
 - `pixelens ai` sending text and image to configured AI provider (if model supports vision)
 - `pixelens translate` translating OCR text
-- `pixelens image` saving image to cache, copying to clipboard, and opening Google Lens upload page
+- `pixelens image` saving image locally and opening Google Lens upload page
 - Menu backends: fuzzel, wofi, stdin (auto-detected)
 - Daemon start and status behavior verified
 - Vision model detection for AI image input
@@ -40,7 +40,7 @@ All commands are selection-first. Typed positional text is not the normal input 
 | `pixelens search` | Select region, OCR, return search URL |
 | `pixelens ai` | Select region, OCR, send text+image to AI (if model supports vision) |
 | `pixelens translate` | Select region, OCR, translate (optional `--to`) |
-| `pixelens image` | Select region, save image, copy to clipboard, open Google Lens upload page |
+| `pixelens image` | Select region, save image, open Google Lens upload page |
 | `pixelens daemon start` | Start pixelensd if not running |
 | `pixelens daemon status` | Check daemon via IPC |
 | `pixelens daemon stop` | Graceful shutdown via IPC |
@@ -64,7 +64,7 @@ Configure via `menu_backend` in config (default: "auto").
 
 ## Known Limitations
 
-- Automatic reverse image upload not implemented (opens upload page only)
+- Automatic reverse image search not implemented (opens upload page only)
 - Compositor keybindings currently provide the reliable Wayland trigger mechanism
 - OCR may preserve layout artifacts from Tesseract
 

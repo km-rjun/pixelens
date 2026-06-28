@@ -14,7 +14,7 @@ A Linux-native visual search and OCR utility.
 | AI integration | Working |
 | Translate | Working |
 | Daemon with IPC | Working |
-| Reverse image search | Not implemented |
+| Reverse image search | MVP (save + upload page) |
 | X11 support | Not implemented |
 
 ## Architecture
@@ -24,7 +24,7 @@ pixelens/
 ├── crates/
 │   ├── pixelens/           # CLI binary
 │   ├── pixelensd/          # Daemon binary (single source of truth)
-│   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, menu)
+│   └── pixelens-core/      # Core library (config, capture, OCR, actions, IPC, menu, upload, search)
 ├── docs/
 ├── Cargo.toml              # Workspace root
 └── README.md
@@ -68,6 +68,9 @@ pixelens ai --prompt "What is happening here?"
 pixelens translate --to Spanish
 pixelens translate --to French
 
+# Save image and open Google Lens upload page
+pixelens image
+
 # Start the daemon
 pixelens daemon start
 
@@ -96,7 +99,8 @@ Configuration is stored at `~/.config/pixelens/config.json`:
   "api_endpoint": "https://api.openai.com/v1",
   "model": "gpt-4o",
   "ocr_language": "eng",
-  "menu_backend": "auto"
+  "menu_backend": "auto",
+  "reverse_image_provider": "google_lens"
 }
 ```
 
@@ -109,6 +113,12 @@ The action menu uses one of these backends (auto-detected by default):
 - **stdin** - Terminal fallback for non-GUI environments
 
 Set `menu_backend` in config to force a specific backend.
+
+### Reverse Image Search
+
+`pixelens image` saves the captured screenshot locally and opens the Google Lens upload page.
+
+**Privacy note**: Screenshots may contain private data. Automatic upload to external services is disabled by default. To enable automatic upload, configure `image_upload_provider` in the config file.
 
 ### API Key
 
