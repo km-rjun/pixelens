@@ -406,30 +406,47 @@ fn cmd_check() -> i32 {
 }
 
 async fn cmd_daemon_start() -> i32 {
-    let server = pixelens_core::ipc::server::IpcServer::new();
-    log::info!("Starting Pixelens daemon...");
+    let client = IpcClient::new();
+    if let Ok(true) = client.ping().await {
+        eprintln!("pixelensd is already running");
+        return 0;
+    }
 
-    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
-    let notify_clone = notify.clone();
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("pixelensd")))
+        .unwrap_or_else(|| std::path::PathBuf::from("pixelensd"));
 
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        log::info!("Shutdown signal received");
-        notify_clone.notify_one();
-    });
+    if !exe.exists() {
+        eprintln!("pixelensd not found at: {}", exe.display());
+        eprintln!("Build it with: cargo build --release -p pixelensd");
+        return 1;
+    }
 
-    let server_clone = server.clone();
-    tokio::spawn(async move {
-        notify.notified().await;
-        server_clone.stop();
-        process::exit(0);
-    });
-
-    if let Err(e) = server.start().await {
-        eprintln!("Daemon error: {}", e);
-        1
-    } else {
-        0
+    match std::process::Command::new(&exe)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_child) => {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let client = IpcClient::new();
+            match client.ping().await {
+                Ok(true) => {
+                    eprintln!("pixelensd started and responding");
+                    0
+                }
+                _ => {
+                    eprintln!("pixelensd started but not responding yet");
+                    1
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to start pixelensd: {}", e);
+            1
+        }
     }
 }
 

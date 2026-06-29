@@ -7,7 +7,7 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::actions::get_handler;
 use crate::capture::{check_tools as check_capture_tools, detect_backend};
 use crate::config::Config;
-use crate::ocr::{check_tools as check_ocr_tools, clean_ocr_output, create_engine};
+use crate::ocr::{check_tools as check_ocr_tools, create_engine};
 
 use super::protocol::{Request, Response};
 use super::IpcError;
@@ -27,6 +27,13 @@ impl IpcServer {
         Self {
             socket_path: socket_dir.join("pixelens.sock"),
         }
+    }
+
+    pub fn socket_path() -> PathBuf {
+        let socket_dir = dirs::runtime_dir()
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .join("pixelens");
+        socket_dir.join("pixelens.sock")
     }
 
     pub async fn start(&self) -> Result<(), IpcError> {
@@ -144,11 +151,7 @@ async fn handle_request(request: Request) -> Response {
             language,
         } => match create_engine() {
             Ok(engine) => match engine.perform_ocr(&image_path, &language) {
-                Ok(result) => {
-                    let mut r = result;
-                    r.text = clean_ocr_output(&r.text);
-                    Response::OcrResult(r)
-                }
+                Ok(result) => Response::OcrResult(result),
                 Err(e) => Response::Error(e.to_string()),
             },
             Err(e) => Response::Error(e.to_string()),
@@ -222,8 +225,11 @@ async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
 
     if let Some(prompt) = ai {
         let config = Config::load();
-        let client =
-            crate::ai::OpenAiClient::new(config.api_endpoint, config.api_key, config.model.clone());
+        let client = crate::ai::OpenAiClient::new(
+            config.api_endpoint,
+            config.api_key,
+            config.model.clone(),
+        );
         let ai_request = crate::types::AiRequest {
             prompt,
             image_path: Some(image_path.clone()),
@@ -243,6 +249,27 @@ async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
             ai_response: None,
         }
     }
+}
+
+fn clean_ocr_output(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut result: Vec<&str> = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let is_blank = lines[i].trim().is_empty();
+
+        if is_blank {
+            while i < lines.len() && lines[i].trim().is_empty() {
+                i += 1;
+            }
+        } else {
+            result.push(lines[i]);
+            i += 1;
+        }
+    }
+
+    result.join("\n")
 }
 
 #[cfg(test)]

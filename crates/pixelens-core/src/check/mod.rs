@@ -124,14 +124,12 @@ fn check_wayland_session() -> CheckItem {
 }
 
 fn check_daemon_running() -> CheckItem {
-    let output = std::process::Command::new("pgrep")
-        .arg("-x")
-        .arg("pixelensd")
-        .output();
+    let socket_path = crate::ipc::server::IpcServer::socket_path();
 
-    match output {
-        Ok(o) if o.status.success() => CheckItem::ok("pixelensd is running"),
-        _ => CheckItem::warn("daemon not running"),
+    if socket_path.exists() {
+        CheckItem::ok("daemon socket exists")
+    } else {
+        CheckItem::warn("daemon not running")
     }
 }
 
@@ -233,7 +231,7 @@ pub fn run_check() -> CheckResult {
     result.push(check_tool("pixelensd"));
     result.push(check_tool("grim"));
     result.push(check_tool("slurp"));
-    result.push(check_tool("tesseract"));
+    result.push(check_tool("pixelensd"));
     result.push(check_tool("wl-copy"));
     result.push(check_tool("xdg-open"));
 
