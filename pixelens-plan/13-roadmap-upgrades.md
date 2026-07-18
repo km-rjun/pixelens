@@ -10,7 +10,7 @@ hotkey → select → text copied in <2s, **no menus/confirmations**.
 **Goal**: bind a global hotkey so `pixelens grab` is no longer CLI-only.
 
 **Work**:
-- Add `pixelens-hotkey` crate with xdotool (X11) and virtual-keyboard /
+- Add `pixelens-hotkey` crate with xdotool (X11) and virtual-keyboard / 
   systemd user service (Wayland) backend
 - Write `pixelens hotkey enable/disable/status` CLI commands
 - Create systemd user unit `~/.config/systemd/user/pixelens-hotkey.service`
@@ -29,24 +29,28 @@ hotkey → select → text copied in <2s, **no menus/confirmations**.
 
 ---
 
-## Upgrade M2 — Portal-native capture (optional speedup)
+## Upgrade M2 — Windows support (replaces Snipping Tool)
 
-**Goal**: use xdg-desktop-portal directly instead of slurp+grim shell-outs
-(~300-400ms faster on some compositors per PRD perf targets).
+**Goal**: Pixelens replaces Windows Snipping Tool. Same 2s text-extract flow, native
+to Windows.
 
 **Work**:
-- Add `pixelens-portal` crate behind feature flag `portal`
-- Implement `PortalBackend` satisfying `CaptureBackend`
-- Prefer portal if available, fall back to slurp+grim transparently
+- Add `target: windows` to `Cargo.toml`, conditional compilation module
+- Windows capture via WinRT screen capture APIs (or GDI+ fallback)
+- Windows clipboard via `clipboard` crate + `windows` crate bindings
+- Windows notification via `winrt-notification` or PowerShell toast
+- MSI/winget packaging draft (M10 tracks this)
 
 **QA checkpoint**:
-1. Portal path works correctly on wlroots compositors
-2. Silent fallback to slurp+grim on GNOME/KDE when portal fails
-3. Timing gap to `grab_captured_end_to_end` test narrows by ≥150ms
+1. Windows 10/11: hotkey → select → text copied in <2s (ideally ≤1.8s)
+2. Clipboard verified via Notepad paste test
+3. No Windows Defender false positives / admin rights required
+4. Same CLI flags work (`grab`, `status`, `stop`)
 
 **Safety gate**:
-- Portal path unit-tested with mock portal responses
-- Full workspace build + test on clean checkout
+- Cross-platform tests: `cargo test --features=windows`
+- Review for Windows-specific lint warnings
+- Verify no MSVC linker errors on clean build
 
 ---
 
@@ -71,7 +75,53 @@ hotkey → select → text copied in <2s, **no menus/confirmations**.
 
 ---
 
-## Upgrade M4 — Multi-display smart selection
+## Upgrade M4 — Grab UI / Actions popup overhaul
+
+**Goal**: Replace the CLI-only grab experience with a minimal HUD that shows
+immediate actions (redetect display, toggle preview, grab region) without
+leaving the keyboard. Still no menus/confirmations.
+
+**Work**:
+- New `pixelens-gui` crate using `iced` or `egui` for instant overlay
+- Hotkey + `Space` opens HUD with 3 actions visible for 1.5s
+- Mouse/touch optional: keyboard shortcuts `r` (redetect), `p` (preview), `g` (grab)
+- Preserve existing slurp+grim flow; HUD only shows options
+
+**QA checkpoint**:
+1. HUD appears within 100ms of hotkey+Space
+2. `g` keypress goes direct to selection (no visible HUD delay)
+3. No input blocking; HUD fades if ignored
+4. Timing still meets <2s goal when HUD is skipped (default path unchanged)
+
+**Safety gate**:
+- `cargo fmt --check` clean
+- HUD integration tests pass on Wayland/X11
+- No added unsafe unless absolutely necessary (and documented)
+
+---
+
+## Upgrade M5 — Portal-native capture (optional speedup)
+
+**Goal**: use xdg-desktop-portal directly instead of slurp+grim shell-outs
+(~300-400ms faster on some compositors per PRD perf targets).
+
+**Work**:
+- Add `pixelens-portal` crate behind feature flag `portal`
+- Implement `PortalBackend` satisfying `CaptureBackend`
+- Prefer portal if available, fall back to slurp+grim transparently
+
+**QA checkpoint**:
+1. Portal path works correctly on wlroots compositors
+2. Silent fallback to slurp+grim on GNOME/KDE when portal fails
+3. Timing gap to `grab_captured_end_to_end` test narrows by ≥150ms
+
+**Safety gate**:
+- Portal path unit-tested with mock portal responses
+- Full workspace build + test on clean checkout
+
+---
+
+## Upgrade M6 — Multi-display smart selection
 
 **Goal**: detect which monitor the cursor is on; limit slurp to that output.
 
@@ -91,7 +141,7 @@ hotkey → select → text copied in <2s, **no menus/confirmations**.
 
 ---
 
-## Upgrade M5 — On-demand vs continuous mode
+## Upgrade M7 — On-demand vs continuous mode
 
 **Goal**: user can toggle whether Pixelens stays resident or starts fresh each
 time (privacy-focused minimal footprint).
@@ -113,7 +163,7 @@ time (privacy-focused minimal footprint).
 
 ---
 
-## Upgrade M6 — Tesseract performance tuning
+## Upgrade M8 — Tesseract performance tuning
 
 **Goal**: drop OCR latency toward the PRD target (v1 requires ≤1.8s, upgrades
 aim for ≤1.6s median).

@@ -9,6 +9,7 @@ _Last updated: 2026-07-18 (session: hy3)_
 ## Build status: 🟢 GREEN
 - `cargo build` passes after restoring CLI from `6dfb60a`.
 - Commit `65ce41b` fixes the regression.
+- Commit `f2a3b4c` fixes clippy warning.
 
 ## Test status: 🔴 ONE FAILING INTEGRATION TEST
 - `cargo test` fails on `pixelens-daemon/tests/integration/grab_captured_end_to_end`
@@ -16,9 +17,10 @@ _Last updated: 2026-07-18 (session: hy3)_
 - Other integration tests pass.
 
 ## Git status
-- Branch: `main` @ `65ce41b` (ahead of `e939894` by 1 fix commit + plan files)
+- Branch: `main` @ `f2a3b4c` (ahead of `e939894` by 2 fix commits + plan files)
 - Remote push attempted; permission denied (expected — local only)
 - Recent commits:
+  - `f2a3b4c` style: clippy warning fix (needless return)
   - `65ce41b` fix(cli): restore IPC-based grab/status client (this session)
   - `b6d5d33` ⚠️ BROKEN CLI commit (reverted)
   - `e939894` feat: complete integration tests + documentation
@@ -33,8 +35,21 @@ _Last updated: 2026-07-18 (session: hy3)_
 2. M7 clipboard + notify (core loop: selection → text on clipboard).
 3. M4 X11 backend, M8 config, M9 tray, M10 packaging, M11 full testing/release.
 
+## Upgrade roadmap (post-v1.0)
+- Upgrade M1: Hotkey daemon — binds global hotkey, systemd service backend
+- Upgrade M2: Windows support — replaces Snipping Tool, same 2s flow
+- Upgrade M3: Systemd + autostart integration
+- Upgrade M4: Grab UI / Actions popup — minimal HUD, no menus
+- Upgrade M5: Portal-native capture speedup
+- Upgrade M6: Multi-display smart selection
+- Upgrade M7: On-demand vs continuous mode
+- Upgrade M8: Tesseract performance tuning
+
+See `13-roadmap-upgrades.md` for details. Each upgrade requires QA checkpoint
+and safety gate before GitHub push.
+
 ## Documentation added (this session)
-- `pixelens-plan/` — 12+ files covering overview, goals, architecture, milestones,
+- `pixelens-plan/` — 15 files covering overview, goals, architecture, milestones,
   per-crate docs, progress, changelog, and roadmap (both v1 and upgrades).
 - `README.md` — rewritten with setup, quick-start, config, troubleshooting.
 
