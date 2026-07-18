@@ -76,10 +76,19 @@ below is **verified against the actual tree and git log**, not assumed.
       unit tests + integration sim (stub slurp/grim, no clipboard
       tool → log-and-continue). Needs a real Wayland/X11 session.
 
-## M8 — Configuration — ❌
-- [ ] `config.toml` parsing with defaults — stub only (`pixelens-config`)
-- [ ] `pixelens config` CLI commands — not implemented
-- [ ] Autostart via `.desktop` file — not started
+## M8 — Configuration — ✅
+- [x] `config.toml` load/save with defaults — `pixelens-config/src/io.rs`
+      (`load_config`/`save_config` + `_from` variants; returns model defaults
+      when file absent/invalid). Path: `~/.config/pixelens/config.toml`.
+- [x] `pixelens config` CLI — `list` / `get <key>` / `set <key> <value>`
+      (dotted keys, typed set, parent-dir creation, clear unknown-key error).
+- [x] Daemon consumes config — `run()` loads config, logs resolved
+      `general.hotkey` (env > config > model default) and gates
+      `capture.show_preview` log. `pixelens-keyhook` uses `general.hotkey`
+      as its default combo (env `PIXELENS_HOTKEY` still wins).
+- [x] Unit tests — `pixelens-config` 3/3 (`temp_dir`-based, never touch
+      real `~/.config`): load defaults, round-trip, get/set dotted keys.
+- [ ] Autostart via `.desktop` file — not started (deferred to UM3).
 
 ## M9 — Tray — ❌
 - [ ] System tray icon — not started

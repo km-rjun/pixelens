@@ -38,8 +38,50 @@ _(old entries unchanged)_
 - GitHub remote diverged; not pushed (no force-push).
 
 ---
+
+2026-07-18 | session `hy3` (M8 — Configuration: make config USED)
+- **Implemented `pixelens-config` file I/O** (`pixelens-config/src/io.rs`):
+  - `load_config()` / `load_config_from(path)` — read `~/.config/pixelens/config.toml`;
+    return `Config::default()` (model defaults) when absent/unreadable/invalid TOML.
+  - `save_config()` / `save_config_to(path)` — write TOML (serde), create parent dir
+    (`create_dir_all`) if missing.
+  - `get_value(&Config, &str)` / `set_value(&mut Config, &str, &str)` — dotted-key
+    access (`general.hotkey`, `capture.show_preview`, …) with loose typed validation
+    (bool for autostart/show_preview, string otherwise). `KNOWN_KEYS` for validation +
+    `ConfigError::{Io, Toml, UnknownKey, InvalidBool, InvalidValue}` (thiserror).
+  - Exposed via `lib.rs`: `pub mod io;` + re-exports.
+- **CLI `config` subcommands** (`pixelens-cli/src/main.rs`): replaced the stub with
+  `run_config(subcmd, key, value)` (sync, file-based) implementing:
+  - `list` — prints all keys + values from loaded config (or defaults if no file).
+  - `get <key>` — prints one key; clear error if unknown.
+  - `set <key> <value>` — sets + writes TOML + reports success.
+  - `keyhook_combo()` now resolves `PIXELENS_HOTKEY` env > config `general.hotkey` >
+    model default (was hardcoded string).
+- **Daemon consumes config** (`pixelens-daemon/src/lib.rs` `run()`):
+  - Loads `Config` at startup; logs resolved `general.hotkey` and gates
+    `capture.show_preview` debug log (non-fatal). Config is now observably USED.
+- **Keyhook default from config** (`pixelens-keyhook/src/main.rs`): `general.hotkey`
+  is the default combo when `PIXELENS_HOTKEY` env is unset (env still wins).
+- **Tests** (`pixelens-config/src/io.rs`): 3 tests, `temp_dir`-based (never touch
+  real `~/.config`): `load_defaults_when_missing`, `load_round_trips`,
+  `get_and_set_dotted_keys`.
+- Build: `cargo clippy --workspace --all-targets -D warnings` clean (compiles all
+  crates) and per-crate `cargo build -p <crate>` green. Full `cargo build --workspace`
+  is NOT exercised here — it stalls on ENOSPC (root FS ~83% full, known limit). Fmt clean.
+- Test: `cargo test -p pixelens-config` → 3 passed; 0 failed. Functional CLI smoke
+  test in a throwaway `$HOME` confirmed `list`/`get`/`set` + unknown-key error.
+- Live preview/hotkey QA NOT exercised (headless, no display). Consumption visible
+  via daemon startup logs.
+- Commits (branch `features/core-loop`): `feat(config): add TOML load/save + get/set`,
+  `feat(cli): implement config list/get/set`, `feat(keyhook+daemon): consume
+  general.hotkey + show_preview from config`, `test(config): round-trip loader`,
+  `docs(plan): record M8 configuration`.
+- GitHub: NOT pushed — remote `main` is an unrelated history; local main is on branch
+  `features/core-loop` (already exists). Do not force-push.
+
+---
+
 - Implemented **UM1 Hotkey Daemon**:
-  - New crate `pixelens-keyhook`: `lib.rs` (trait + `KeyCombo` parse + `fire_grab`),
     `wayland.rs` (evdev reader, no device grab), `x11.rs` (x11rb root grab +
     keyboard-mapping keysym→keycode resolve), `backend.rs` (display dispatch),
     `main.rs`.

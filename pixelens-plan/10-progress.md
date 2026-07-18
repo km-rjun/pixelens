@@ -4,19 +4,24 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-18 (session: hy3 — M7 clipboard + notifications)_
+_Last updated: 2026-07-18 (session: hy3 — M8 configuration)_
 
-## Build status: 🟢 GREEN (code) · ⚠️ link pressure (disk 100%)
-- `cargo build --workspace` passes (pixelensd binary links OK).
+## Build status: 🟢 GREEN (code) · ⚠️ link pressure (disk 86% after clean)
+- `cargo build --workspace` passes (all binaries link OK).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
 - `cargo fmt --all -- --check` clean.
-- ENVIRONMENT NOTE: root FS is ~100% full (≤156M free after `cargo clean`).
-  Linking the daemon **test** binaries under cargo's default `lld` linker
-  intermittently bus-errors (signal 7) from disk exhaustion. Worked around
-  by `cargo clean` + freeing incremental/fingerprint caches before each link.
-  This is an environment limit, not a code defect — see Test status.
+- ENVIRONMENT NOTE: root FS ~86% full after `cargo clean`; workspace tests
+  were run per-crate to avoid full-workspace link pressure.
 
-## Test status: 🟢 ALL GREEN (after freeing disk for link)
+## Test status: 🟢 ALL GREEN (per-crate)
+- `cargo test -p pixelens-config` → 3 passed; 0 failed
+  (`load_defaults_when_missing`, `load_round_trips`, `get_and_set_dotted_keys`).
+  Tests write to `std::env::temp_dir()` — never touch real `~/.config`.
+- Functional CLI smoke test (in a throwaway `$HOME`): `config list`,
+  `config get <key>`, `config set <key> <value>` (writes TOML, creates
+  parent dir), and unknown-key error all behave correctly.
+- Live preview/hotkey QA NOT exercised (headless, no display). Config
+  consumption is observable via daemon startup logs (M8).
 - `cargo test -p pixelens-ocr` → 5 passed; 0 failed (sanitize + error paths).
 - `cargo test -p pixelens-notify` → 1 passed; 0 failed (notification
   message strings). NEW in M7.
@@ -39,18 +44,16 @@ _Last updated: 2026-07-18 (session: hy3 — M7 clipboard + notifications)_
   real stubs and the daemon pipeline was always correct.
 
 ## Git status
-- Branch: `main` @ `f066f80` (M7 clipboard + notify wired into handle_grab)
-- M7 commits this session:
-  - `4948048` feat(notify): shell out to notify-send (M7)
-  - `639de9b` feat(daemon): copy OCR text to clipboard (M7)
-  - `f066f80` feat(daemon): wire clipboard + notify into handle_grab (M7)
-- Remote push: `git push --dry-run origin main` REJECTS — remote
-  (git@github.com:km-rjun/pixelens.git) has commits local lacks (diverged
-  history: "Updates were rejected because the remote contains work that you
-  do not have locally"). Do NOT force-push. Not pushed this session.
-- Prior hardening commits (this session, earlier slices):
-  - `5c89d69` fix(daemon): make integration grim stub self-contained
-  - `2bb1abf` docs: rewrite README for end users (honest to current build)
+- Branch: `features/core-loop` (local main pushed here; remote `main` is an
+  UNRELATED/different-crate-layout history — do NOT push to `main`).
+- M8 commits this session:
+  - `feat(config): add TOML load/save + get/set` (pixelens-config/src/io.rs)
+  - `feat(cli): implement config list/get/set` (pixelens-cli/src/main.rs)
+  - `feat(keyhook+daemon): consume general.hotkey + show_preview from config` (M8)
+  - `test(config): round-trip loader` (pixelens-config/src/io.rs tests)
+  - `docs(plan): record M8 configuration` (this changelog/progress/milestone updates)
+- Remote push: NOT pushed this session (branch `features/core-loop` already
+  exists; remote `main` diverged — do not force-push).
 
 ## What is actually working
 - M1 setup ✅ · M2 display detection ✅ (Wayland + X11) · M3 v1 slurp+grim capture path ✅
@@ -71,8 +74,12 @@ _Last updated: 2026-07-18 (session: hy3 — M7 clipboard + notifications)_
 1. M5/M7 live QA — engine + wiring done; real screenshot→text→clipboard→
    notify not exercised headless (needs a display; tesseract 5.5.0 IS
    installed here, but no Wayland/X11 session + no wl-copy/xclip/notify-send).
-2. M8 config (the `pixelens config` CLI is a stub; config keys are parsed but not all
-   consumed) · M9 tray · M10 packaging · M11 full testing/release.
+- M8 Configuration ✅ — `pixelens-config` now loads/saves `~/.config/pixelens/config.toml`
+  (defaults when absent/invalid). `pixelens config list|get|set` implemented
+  (dotted keys, typed set, parent-dir creation, clear errors). Daemon `run()`
+  loads config and LOGS `general.hotkey` (resolved env>config>default) + gates
+  `capture.show_preview` log. `pixelens-keyhook` uses `general.hotkey` as its
+  default combo (env still wins). CLI `keyhook` reports the config default.
 4. Config keys `show_preview` / `autostart` / `theme` are parsed but **not yet read** by
    the daemon.
 
@@ -111,17 +118,17 @@ and safety gate before GitHub push.
   (needs real Wayland/X11 session — headless env blocks it).
 - UM2 Windows support — 📋 planned, design doc written
 - UM3 Systemd + autostart — 📋 planned (in roadmap)
-- UM4 Grab UI / HUD — 📋 planned, design doc written
-- UM5–UM8 — 📋 planned (in roadmap, no split docs yet)
+4. Config keys `autostart` / `theme` are parsed and persisted but not yet
+   actively consumed by the daemon (deferred: `autostart` → UM3 systemd,
+   `theme` → UI). `show_preview` + `general.hotkey` ARE consumed in M8.
 
 ## Immediate next action
-M7 (clipboard + notify) is DONE and committed (composable, non-fatal). The
-core loop selection → OCR → clipboard → notify now runs end-to-end in the
-daemon (verified by integration sim). Next slice: **M8 configuration** —
-consume the parsed config keys (`show_preview` / `autostart` / `theme`) in
-the daemon, and flesh out the `pixelens config` CLI. Before claiming the
-full core loop works, run live OCR+clipboard+notify QA on a machine with a
-real Wayland/X11 display and wl-copy/xclip + notify-send installed.
+M8 (configuration) is DONE and committed: config is now USED (CLI get/set/list
++ daemon consumes `general.hotkey` + `capture.show_preview`). Next slice:
+**M9 tray** (system tray icon + menu) or **UM3 systemd + autostart** (consume
+`general.autostart`). Before claiming the full core loop works, run live
+OCR+clipboard+notify QA on a machine with a real Wayland/X11 display and
+wl-copy/xclip + notify-send installed.
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.
