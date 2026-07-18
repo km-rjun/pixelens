@@ -93,6 +93,11 @@ pub struct GrabResponsePayload {
     pub bytes: u64,
     /// Unix epoch milliseconds at which the capture completed.
     pub captured_at_ms: u64,
+    /// Extracted text from the captured region (M5+). Empty string when
+    /// OCR is unavailable or found no text. Defaults to `""` on the wire
+    /// so older readers still deserialise captures produced before M5.
+    #[serde(default)]
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,6 +150,7 @@ mod tests {
             },
             bytes: 12345,
             captured_at_ms: 1700000000000,
+            text: String::new(),
         };
         let resp = IpcResponse::ok("req-1".to_string(), &payload).unwrap();
         assert_eq!(resp.status, ResponseStatus::Ok);
@@ -164,6 +170,7 @@ mod tests {
             },
             bytes: 0,
             captured_at_ms: 0,
+            text: String::new(),
         };
         let json = serde_json::to_string(&payload).unwrap();
         let back: GrabResponsePayload = serde_json::from_str(&json).unwrap();
