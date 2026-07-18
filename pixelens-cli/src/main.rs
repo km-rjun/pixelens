@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use pixelens_config::{get_value, load_config, save_config, set_value, KNOWN_KEYS};
 use pixelens_ipc::{
     read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcError, IpcRequest,
     IpcResponse, ResponseStatus,
@@ -115,8 +116,13 @@ async fn real_main() -> ExitCode {
             }
         },
         Some("config") => {
-            println!("'config' command (stub — wired in M8)");
-            ExitCode::SUCCESS
+            match run_config(args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::from(1)
+                }
+            }
         }
         Some(cmd) if RESERVED_COMMANDS.contains(&cmd) => {
             eprintln!(
@@ -179,7 +185,16 @@ fn keyhook_binary() -> Option<std::path::PathBuf> {
 }
 
 fn keyhook_combo() -> String {
-    std::env::var("PIXELENS_HOTKEY").unwrap_or_else(|_| "Super+Shift+T".to_string())
+    if let Ok(env) = std::env::var("PIXELENS_HOTKEY") {
+        if !env.is_empty() {
+            return env;
+        }
+    }
+    // M8: fall back to the on-disk config's general.hotkey so the CLI
+    // reports the same combo the keyhook will actually use.
+    pixelens_config::load_config()
+        .map(|c| c.general.hotkey)
+        .unwrap_or_else(|_| "Super+Shift+T".to_string())
 }
 
 fn unit_content(bin: &std::path::Path) -> String {
@@ -390,4 +405,47 @@ async fn run_stop() -> Result<(), CliError> {
     }
     println!("stop signal sent");
     Ok(())
+}
+
+/// `pixelens config <list|get <key>|set <key> <value>>`.
+///
+/// Operates on the on-disk TOML config directly (M8). Machine-friendly
+/// output: `list` prints `key = value` lines, `get` prints just the
+/// value, `set` reports success on stderr-free stdout.
+fn run_config(
+    sub: Option<&str>,
+    arg2: Option<&String>,
+    arg3: Option<&String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match sub {
+        Some("list") => {
+            let cfg = load_config()?;
+            for key in KNOWN_KEYS {
+                println!("{key} = {}", get_value(&cfg, key)?);
+            }
+            Ok(())
+        }
+        Some("get") => {
+            let key = arg2.ok_or("usage: pixelens config get <key>")?;
+            let cfg = load_config()?;
+            println!("{}", get_value(&cfg, key)?);
+            Ok(())
+        }
+        Some("set") => {
+            let key = arg2.ok_or("usage: pixelens config set <key> <value>")?;
+            let value = arg3.ok_or("usage: pixelens config set <key> <value>")?;
+            let mut cfg = load_config()?;
+            set_value(&mut cfg, key, value)?;
+            save_config(&cfg)?;
+            println!("set {key} = {value}");
+            Ok(())
+        }
+        Some(other) => {
+            Err(format!("unknown config subcommand '{other}' (expected list|get|set)").into())
+        }
+        None => {
+            eprintln!("usage: pixelens config <list|get <key>|set <key> <value>>");
+            Ok(())
+        }
+    }
 }
