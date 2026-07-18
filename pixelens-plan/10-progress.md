@@ -36,10 +36,11 @@ _Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 2: user README r
 
 ## What is actually working
 - M1 setup ✅ · M2 display detection ✅ (Wayland + X11) · M3 v1 slurp+grim capture path ✅
-  (works on both Wayland and X11; grim has X11 support) · M4 X11 **backend is DONE**
-  (x11rb root-window grab in `pixelens-keyhook/src/x11.rs`; capture uses slurp+grim) ·
-  M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed) · UM1 global hotkey ✅
-  (Wayland evdev + X11 x11rb; systemd --user service).
+  (works on both Wayland and X11; grim has X11 support) · M4 X11 capture **NOT done**
+  (`pixelens-capture/src/x11.rs` is a stub → `PixelensError::NotImplemented("X11CaptureProvider (M4)")`,
+  per 03-milestones.md M4 = ❌) · M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed) ·
+  UM1 global hotkey ✅ (Wayland evdev + X11 x11rb in `pixelens-keyhook/src/x11.rs`;
+  systemd --user service). NOTE: the X11 x11rb code is the **UM1 hotkey listener**, not M4 capture.
 
 ## What is NOT done (next in line)
 1. M5 OCR (Tesseract warm init) — `pixelens-ocr` is a skeleton; `handle_grab` returns a
@@ -50,10 +51,14 @@ _Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 2: user README r
 4. Config keys `show_preview` / `autostart` / `theme` are parsed but **not yet read** by
    the daemon.
 
-> Honesty note (2026-07-18): an earlier progress entry claimed M4 X11 was NOT done.
-> The code shows X11 is fully implemented (x11rb). Corrected here. Also the existing
-> README overclaimed "text copied to clipboard in <2s" and "tesseract required at
-> startup" — both inaccurate for the current build. README rewritten to match code.
+> Honesty note (2026-07-18): an earlier progress entry correctly stated the README
+> overclaimed "text copied to clipboard in <2s" and "tesseract required at startup" —
+> both inaccurate for the current build; README was rewritten to match code.
+> CORRECTION (2026-07-18, later same session): a prior sentence here claimed "M4 X11 is
+> DONE (x11rb root-window grab in pixelens-keyhook/src/x11.rs)". That was WRONG. The
+> x11rb code is the **UM1 hotkey listener**, not M4 capture. M4 Capture (X11) in
+> `pixelens-capture/src/x11.rs` is **still a stub** (`NotImplemented("X11CaptureProvider (M4)")`),
+> consistent with 03-milestones.md (M4 = ❌). See "What is actually working" above.
 
 ## Upgrade roadmap (post-v1.0)
 - Upgrade M1: Hotkey daemon — binds global hotkey, systemd service backend

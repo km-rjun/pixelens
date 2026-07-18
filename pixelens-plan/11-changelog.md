@@ -66,11 +66,29 @@ _(old entries unchanged)_
     CLI is a stub (edit TOML directly).
   - Troubleshooting: daemon down, missing slurp/grim, Wayland hotkey not firing
     (input group), and "capture returns a path not text" expectation.
-- Also corrected `10-progress.md`: M4 X11 is actually DONE (x11rb); M5/M7 still pending.
+- Also corrected `10-progress.md`: M5/M7 still pending; M4 X11 capture still a stub (see correction entry below).
 - QA: `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets
   -- -D warnings` clean (no Rust changes, README only). No code behavior changed.
 - Commit `2bb1abf` docs: rewrite README for end users (honest to current build).
   Files: `README.md` (+157/-76).
+
+---
+
+2026-07-18 | session `hy3` (REVISE — correct M4 X11 capture status)
+- **CORRECTION** of an earlier mislabel: `10-progress.md` (and a prior 11-changelog
+  line under the README-rewrite slice) claimed "M4 X11 is DONE (x11rb root-window
+  grab in pixelens-keyhook/src/x11.rs)". This was WRONG.
+  - The x11rb code in `pixelens-keyhook/src/x11.rs` is the **UM1 global hotkey
+    listener**, not M4 capture.
+  - **M4 Capture (X11)** lives in `pixelens-capture/src/x11.rs` and is **still a
+    stub**: `X11CaptureProvider` returns `PixelensError::NotImplemented("X11CaptureProvider (M4)")`.
+  - This matches `03-milestones.md` (## M4 — Capture (X11) — ❌, stub only).
+- Fixed `10-progress.md` "What is actually working" + Honesty note, and the inline
+  changelog line, to reflect: M4 = NOT done (stub); x11rb X11 belongs to UM1 hotkey.
+- State after: no Rust changed; plan files consistent with 03-milestones.md.
+- QA: `cargo fmt --all -- --check` clean (no Rust changes).
+
+---
 
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
