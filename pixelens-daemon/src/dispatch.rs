@@ -70,11 +70,34 @@ impl Dispatcher {
                 region,
                 bytes,
             } => {
+                // M5: run OCR on the captured PNG and attach the text to
+                // the response. OCR failure is non-fatal — the capture
+                // already succeeded, so we return whatever text we got
+                // (possibly empty) rather than failing the whole grab.
+                let text = match &self.state.ocr {
+                    Some(engine) => match engine.extract_from_path(&path) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                path = %path.display(),
+                                "OCR failed on captured image; returning empty text"
+                            );
+                            String::new()
+                        }
+                    },
+                    None => {
+                        tracing::debug!("OCR engine not available; skipping text extraction");
+                        String::new()
+                    }
+                };
+
                 let payload = GrabResponsePayload {
                     path: path.to_string_lossy().into_owned(),
                     region: region.into(),
                     bytes,
                     captured_at_ms: now_ms(),
+                    text,
                 };
                 match IpcResponse::ok(request.request_id.clone(), &payload) {
                     Ok(resp) => resp,

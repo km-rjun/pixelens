@@ -63,7 +63,24 @@ pub async fn run() -> anyhow::Result<()> {
 
     println!("pixelensd {VERSION} listening on {}", socket_path.display());
 
-    let state = Arc::new(state::DaemonState::new(display, pipeline));
+    // Warm-init the OCR engine (M5). A missing `tesseract` is non-fatal:
+    // capture still works, grabs just return empty `text`. We log a
+    // warning and continue rather than crash the daemon.
+    let ocr = match pixelens_ocr::TesseractOcrEngine::new() {
+        Ok(engine) => {
+            tracing::info!("OCR engine ready (tesseract)");
+            Some(engine)
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "OCR engine unavailable; grabs will return no text until tesseract is installed"
+            );
+            None
+        }
+    };
+
+    let state = Arc::new(state::DaemonState::new(display, pipeline, ocr));
     let dispatcher = Arc::new(dispatch::Dispatcher::new(state));
 
     ipc::serve(listener, dispatcher).await;
