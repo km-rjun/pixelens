@@ -1,29 +1,109 @@
-Pixelens - Linux-native visual text extraction
+# Pixelens
 
-## Overview
-Pixelens is a CLI tool that leverages Wayland's IPC for screen capture and text extraction.
+**Linux-native visual text extraction.** Select any region on your screen and have
+the text copied to your clipboard in under 2 seconds — no cloud, no accounts,
+no menus.
+
+## Quick start
+
+1. Install dependencies (Wayland):
+   - `slurp` — region selection
+   - `grim` — screenshot capture  
+   - `tesseract` — OCR (required at daemon startup)
+
+2. Build:
+   ```bash
+   git clone https://github.com/km-rjun/pixelens
+   cd pixelens
+   cargo build --release
+   ```
+
+3. Run the daemon (one time, or add to autostart):
+   ```bash
+   ./target/release/pixelensd &
+   # or for persistent background: ./target/release/pixelensd --daemon
+   ```
+
+4. Grab text:
+   ```bash
+   ./target/release/pixelens grab
+   # or: ./target/release/pixelens copy
+   ```
+
+The selected region's text is now on your clipboard.
+
+## Dependencies
+
+| Tool | Purpose | Debian/Ubuntu | Arch |
+|------|---------|---------------|------|
+| slurp | Region selection | `apt install slurp` | `pacman -S slurp` |
+| grim  | Screen capture | `apt install grim` | `pacman -S grim` |
+| tesseract | OCR engine | `apt install tesseract-ocr` | `pacman -S tesseract` |
+
+All three are required. The daemon checks at startup; if any is missing, it
+prints installation instructions and exits.
+
+## Commands
+
+```
+pixelens grab, copy   Select region → copy text to clipboard
+pixelens status        Show daemon version and display server
+pixelens stop          Stop the daemon
+pixelens config        Manage settings (see below)
+pixelens version       Show version
+pixelens help          Show help
+```
+
+## Configuration
+
+Config file: `~/.config/pixelens/config.toml`
+
+Default (written on first run):
+```toml
+[general]
+autostart = false
+theme = "system"
+hotkey = "Super+Shift+T"
+
+[capture]
+show_preview = false
+```
+
+Only `show_preview = true` enables the optional preview/confirm step. The default
+path is zero-friction: select → text → clipboard, no confirmation.
 
 ## Architecture
-Pixelens uses Wayland's IPC to create a local pipeline that handles screen capture and text extraction. The workflow consists of:
 
-1. **Daemon (`pixelensd`)** — binds a Unix socket and runs in the background
-2. **Screen Capturer (`slurp`)** — selects an area and exits with geometry
-3. **Capture Engine (`grim`)** — writes the captured area as a PNG file
-4. **Client (`pixelens`)** — interacts with the daemon and processes the file path
+```
+    hotkey
+      ↓
+Selection overlay (slurp → grim)
+      ↓
+  OCR (Tesseract)
+      ↓
+Clipboard + notification
+```
 
-The IPC is implemented via `pixelens-ipc`, which handles the full pipeline. This enables the daemon to communicate with the CLI and report status, errors, or capture paths in a structured manner.
+The daemon (`pixelensd`) owns the capture and OCR subsystems, warmed at startup.
+The CLI (`pixelens`) talks to it exclusively over a Unix socket
+(`$XDG_RUNTIME_DIR/pixelens.sock`). The capture flow runs `slurp` for region
+selection and `grim` for capture. OCR (Tesseract) extracts text, then it's
+copied to the clipboard.
 
-## Implementation
+## Troubleshooting
 
-The `pixelens grab` workflow is implemented through the following components:
-- `pixelensd` daemon for Unix socket IPC
-- `slurp` for region selection
-- `grim` for capture and PNG output
-- `pixelens` CLI for interaction
+**Daemon not running:**
+```
+pixelensd &
+```
 
-The implementation includes:
-- Wayland detection (`wayland::is_wayland()`)
-- Area selection with slurp
-- Slurp output parsing
-- Capture cancellation handling (`--cancel`)
-- Screenshot saving to `/tmp/screenshot.png`
+**slurp/grim/tesseract missing:**
+Install via your package manager (see table above). The daemon startup will show
+the appropriate command.
+
+**Clipboard empty after grab:**
+The region may contain no detectable text. Or Tesseract may not be installed.
+
+## License
+
+MIT
