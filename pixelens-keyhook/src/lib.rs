@@ -80,29 +80,6 @@ impl KeyCombo {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_super_shift_s() {
-        let c = KeyCombo::parse("Super+Shift+S").unwrap();
-        assert!(c.mods.contains(&Mod::Super));
-        assert!(c.mods.contains(&Mod::Shift));
-        assert_eq!(c.key, "S");
-    }
-
-    #[test]
-    fn rejects_bare_key() {
-        assert!(KeyCombo::parse("S").is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_mod() {
-        assert!(KeyCombo::parse("Foo+S").is_err());
-    }
-}
-
 /// A running hotkey listener. Implemented per display server.
 pub trait KeyhookListener {
     /// Block until stopped (Ctrl-C / process kill). On combo press, fires
@@ -171,5 +148,28 @@ fn socket_path() -> std::path::PathBuf {
     #[cfg(not(unix))]
     {
         std::path::PathBuf::from("(no socket on non-unix)")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_super_shift_s() {
+        let c = KeyCombo::parse("Super+Shift+S").unwrap();
+        assert!(c.mods.contains(&Mod::Super));
+        assert!(c.mods.contains(&Mod::Shift));
+        assert_eq!(c.key, "S");
+    }
+
+    #[test]
+    fn rejects_bare_key() {
+        assert!(KeyCombo::parse("S").is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_mod() {
+        assert!(KeyCombo::parse("Foo+S").is_err());
     }
 }

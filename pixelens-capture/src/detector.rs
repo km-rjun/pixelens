@@ -38,7 +38,7 @@ mod tests {
         // In the test process we can't safely mutate process-global env
         // without affecting other tests, so just exercise the error path
         // here and trust the env-dependent branches in real usage.
-        let result = std::panic::catch_unwind(|| detect_display_server());
+        let result = std::panic::catch_unwind(detect_display_server);
         assert!(result.is_ok());
     }
 }
