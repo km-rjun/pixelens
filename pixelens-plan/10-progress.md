@@ -4,20 +4,28 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-18 (session: hy3)_
+_Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 1)_
 
 ## Build status: 🟢 GREEN
-- `cargo build` passes after restoring CLI from `6dfb60a`.
-- Commit `65ce41b` fixes the regression.
-- Commit `f2a3b4c` fixes clippy warning.
+- `cargo build --workspace` passes.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `cargo fmt --all -- --check` clean.
 
-## Test status: 🔴 ONE FAILING INTEGRATION TEST
-- `cargo test` fails on `pixelens-daemon/tests/integration/grab_captured_end_to_end`
-- Pre-existing failure unrelated to CLI fix; grim stub invocation mismatch.
-- Other integration tests pass.
+## Test status: 🟢 ALL GREEN (4/4 daemon integration tests)
+- `cargo test -p pixelens-daemon --test integration` → 4 passed; 0 failed.
+  - `grab_captured_end_to_end` now PASSES (was the only failure).
+- Root cause of prior failure was a **test-stub bug**, not the daemon:
+  the `grim` stub used `head -c 1024 /dev/urandom`, but the test installs
+  an isolated `$PATH` containing only the slurp/grim stubs, so `head` was
+  not found (exit 127) → 0-byte file → pipeline reported a zero-byte error.
+  Fixed by rewriting the stub to emit 1024 NUL bytes via POSIX-sh builtins only.
+- This was **not** an environmental (headless) failure — it reproduced with
+  real stubs and the daemon pipeline was always correct.
 
 ## Git status
-- Branch: `main` @ `f2a3b4c` (ahead of `e939894` by 2 fix commits + plan files)
+- Branch: `main` @ `5c89d69` (ahead of `e939894` by fix + UM1 commits)
+- Recent commit:
+  - `5c89d69` fix(daemon): make integration grim stub self-contained (no external head)
 - Remote push attempted; permission denied (expected — local only)
 - Recent commits:
   - `f2a3b4c` style: clippy warning fix (needless return)
