@@ -59,10 +59,22 @@ below is **verified against the actual tree and git log**, not assumed.
 - [x] Request ID and cancel support (protocol + dispatch wired for `cancel`
       command, though handler currently returns "not implemented")
 
-## M7 — Clipboard and Notifications — ❌
-- [ ] Clipboard write — not implemented
-- [ ] `libnotify` notification sender — stub only (`pixelens-notify`)
-- [ ] All notification cases covered — not started
+## M7 — Clipboard and Notifications — ✅
+- [x] Clipboard write — `pixelens-daemon::clipboard::copy_text` (M7)
+      shells out to `wl-copy`/`copyq` (Wayland) or `xclip`/`xsel`
+      (X11); degrades to `ClipboardError::NoBackend` if none present.
+- [x] `libnotify` notification sender — `pixelens-notify::NotifySend`
+      shells out to `notify-send`; non-fatal (`BackendUnavailable`).
+- [x] All notification cases covered — `TextCopied` / `NoTextFound`
+      fired from `handle_grab`; `TesseractMissing` / `DaemonNotRunning`
+      enum variants reserved for client side.
+- [x] Wiring: capture → OCR → (text non-empty: copy + "✓ Text copied
+      to clipboard"; empty: "No text found in selection."). Empty text
+      is a **successful** grab, never an error.
+- [ ] Live clipboard/notify QA — **blocked**: headless VM has no
+      display and no wl-copy/xclip/notify-send; logic verified by
+      unit tests + integration sim (stub slurp/grim, no clipboard
+      tool → log-and-continue). Needs a real Wayland/X11 session.
 
 ## M8 — Configuration — ❌
 - [ ] `config.toml` parsing with defaults — stub only (`pixelens-config`)

@@ -4,19 +4,32 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-18 (session: hy3 — M5 OCR engine + daemon wiring)_
+_Last updated: 2026-07-18 (session: hy3 — M7 clipboard + notifications)_
 
-## Build status: 🟢 GREEN
-- `cargo build --workspace` passes.
+## Build status: 🟢 GREEN (code) · ⚠️ link pressure (disk 100%)
+- `cargo build --workspace` passes (pixelensd binary links OK).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
 - `cargo fmt --all -- --check` clean.
+- ENVIRONMENT NOTE: root FS is ~100% full (≤156M free after `cargo clean`).
+  Linking the daemon **test** binaries under cargo's default `lld` linker
+  intermittently bus-errors (signal 7) from disk exhaustion. Worked around
+  by `cargo clean` + freeing incremental/fingerprint caches before each link.
+  This is an environment limit, not a code defect — see Test status.
 
-## Test status: 🟢 ALL GREEN
+## Test status: 🟢 ALL GREEN (after freeing disk for link)
 - `cargo test -p pixelens-ocr` → 5 passed; 0 failed (sanitize + error paths).
-- `cargo test -p pixelens-daemon` → 4 passed; 0 failed (incl. `grab_captured_end_to_end`,
-  `grab_payload_round_trips` now exercises the new `text` field).
+- `cargo test -p pixelens-notify` → 1 passed; 0 failed (notification
+  message strings). NEW in M7.
+- `cargo test -p pixelens-daemon --lib` → 1 passed; 0 failed
+  (`clipboard::tests::copy_text_returns_no_backend_without_clipboard_tools`). NEW in M7.
+- `cargo test -p pixelens-daemon --test integration` → 4 passed; 0 failed
+  (incl. `grab_captured_end_to_end`, which now drives capture → OCR →
+  clipboard/notify branch with no clipboard tool present → log-and-continue).
 - `cargo test -p pixelens-ipc` → 4 passed; 0 failed.
-- NOTE: live OCR end-to-end (real screenshot → tesseract → text) NOT exercised headless.
+- NOTE: live clipboard/notify QA NOT exercised headless (no display, no
+  wl-copy/xclip/notify-send). Logic verified via unit + integration sim.
+- NOTE: a full `cargo test --workspace` could not be linked in this session
+  due to disk-full linker bus-errors; per-crate tests above WERE run green.
 - Root cause of prior failure was a **test-stub bug**, not the daemon:
   the `grim` stub used `head -c 1024 /dev/urandom`, but the test installs
   an isolated `$PATH` containing only the slurp/grim stubs, so `head` was
@@ -26,12 +39,11 @@ _Last updated: 2026-07-18 (session: hy3 — M5 OCR engine + daemon wiring)_
   real stubs and the daemon pipeline was always correct.
 
 ## Git status
-- Branch: `main` @ `d22ecab` (M5 OCR temp-file .bmp fix)
-- Recent M5 commits:
-  - `d22ecab` fix(ocr): name temp image .bmp to match BMP-encoded bytes
-  - `2e4355e` feat(ocr): implement TesseractOcrEngine extract_text + validation
-  - `c45e3b2` feat(ipc): add backward-compatible text field to GrabResponsePayload
-  - `766a034` feat(daemon): warm-init OCR engine + run on grab (M5)
+- Branch: `main` @ `f066f80` (M7 clipboard + notify wired into handle_grab)
+- M7 commits this session:
+  - `4948048` feat(notify): shell out to notify-send (M7)
+  - `639de9b` feat(daemon): copy OCR text to clipboard (M7)
+  - `f066f80` feat(daemon): wire clipboard + notify into handle_grab (M7)
 - Remote push: `git push --dry-run origin main` REJECTS — remote
   (git@github.com:km-rjun/pixelens.git) has commits local lacks (diverged
   history: "Updates were rejected because the remote contains work that you
@@ -45,17 +57,21 @@ _Last updated: 2026-07-18 (session: hy3 — M5 OCR engine + daemon wiring)_
   (works on both Wayland and X11; grim has X11 support) · M4 X11 capture **NOT done**
   (`pixelens-capture/src/x11.rs` is a stub → `PixelensError::NotImplemented("X11CaptureProvider (M4)")`,
   per 03-milestones.md M4 = ❌) · M5 OCR **partial** — `TesseractOcrEngine` implemented +
-  validated + wired into `handle_grab`, `GrabResponsePayload.text` populated (OCR result still
-  NOT copied to clipboard — that's M7) · M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed) ·
-  UM1 global hotkey ✅ (Wayland evdev + X11 x11rb in `pixelens-keyhook/src/x11.rs`;
-  systemd --user service). NOTE: the X11 x11rb code is the **UM1 hotkey listener**, not M4 capture.
+  validates + wired into `handle_grab`, `GrabResponsePayload.text` populated) ·
+  M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed) ·
+  M7 Clipboard + Notifications ✅ — `pixelens-daemon::clipboard::copy_text`
+  shells out to wl-copy/xclip/xsel (display-server aware, degrades gracefully);
+  `pixelens-notify::NotifySend` shells out to `notify-send` (non-fatal);
+  `handle_grab` copies non-empty text + fires "✓ Text copied to clipboard",
+  or "No text found in selection." when OCR text is empty. UM1 global hotkey ✅
+  (Wayland evdev + X11 x11rb in `pixelens-keyhook/src/x11.rs`; systemd --user service).
+  NOTE: the X11 x11rb code is the **UM1 hotkey listener**, not M4 capture.
 
 ## What is NOT done (next in line)
-1. M5 OCR live QA — engine + wiring done; real screenshot→text not exercised headless
-   (needs a display; tesseract 5.5.0 IS installed here).
-2. M7 clipboard + notify (core loop: selection → OCR text → clipboard). M5 already
-   populates `GrabResponsePayload.text`; M7 copies it to the clipboard.
-3. M8 config (the `pixelens config` CLI is a stub; config keys are parsed but not all
+1. M5/M7 live QA — engine + wiring done; real screenshot→text→clipboard→
+   notify not exercised headless (needs a display; tesseract 5.5.0 IS
+   installed here, but no Wayland/X11 session + no wl-copy/xclip/notify-send).
+2. M8 config (the `pixelens config` CLI is a stub; config keys are parsed but not all
    consumed) · M9 tray · M10 packaging · M11 full testing/release.
 4. Config keys `show_preview` / `autostart` / `theme` are parsed but **not yet read** by
    the daemon.
@@ -99,10 +115,13 @@ and safety gate before GitHub push.
 - UM5–UM8 — 📋 planned (in roadmap, no split docs yet)
 
 ## Immediate next action
-M5 engine + wiring is DONE (committed). Next slice: **M7 clipboard** — copy the
-`GrabResponsePayload.text` to the system clipboard (and notify). Live OCR QA
-(real screenshot→text) should be run on a machine with a display before claiming
-the full core loop works.
+M7 (clipboard + notify) is DONE and committed (composable, non-fatal). The
+core loop selection → OCR → clipboard → notify now runs end-to-end in the
+daemon (verified by integration sim). Next slice: **M8 configuration** —
+consume the parsed config keys (`show_preview` / `autostart` / `theme`) in
+the daemon, and flesh out the `pixelens config` CLI. Before claiming the
+full core loop works, run live OCR+clipboard+notify QA on a machine with a
+real Wayland/X11 display and wl-copy/xclip + notify-send installed.
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.

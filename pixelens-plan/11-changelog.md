@@ -7,7 +7,37 @@ _(old entries unchanged)_
 
 ---
 
-2026-07-18 | session `hy3` (UM1 implementation)
+2026-07-18 | session `hy3` (M7 — Clipboard + Notifications)
+- Implemented **M7 Clipboard + Notifications** (completes the core loop):
+  - New `pixelens-daemon::clipboard` module: `copy_text(text)` shells out to
+    `wl-copy`/`copyq` on Wayland or `xclip -selection clipboard`/`xsel -b`
+    on X11 (backend chosen via `pixelens_capture::DisplayServer` from
+    `DaemonState`). `ClipboardError::NoBackend` when no tool present →
+    caller logs a warning and continues (never fails the grab).
+  - `pixelens-notify`: replaced stub with a real `NotifySend` backend that
+    shells out to `notify-send`; non-fatal `BackendUnavailable` when missing.
+    Added `NotificationKind::{TextCopied, NoTextFound, TesseractMissing,
+    DaemonNotRunning}` + `Notifier` trait. Unit test covers message strings.
+  - Wired into `handle_grab`: capture → OCR → if text non-empty: copy to
+    clipboard + fire `TextCopied` ("✓ Text copied to clipboard"); if empty:
+    fire `NoTextFound` ("No text found in selection."). Empty text is a
+    **successful** grab, never an error. Both steps best-effort/log-and-continue.
+  - Unit test `clipboard::tests::copy_text_returns_no_backend_without_clipboard_tools`
+    (headless, no clipboard tool → `NoBackend`).
+- Build: `cargo build --workspace` green (binary links). Clippy
+  `--workspace --all-targets -D warnings` clean. Fmt clean.
+- Test: `pixelens-notify` 1/1, `pixelens-daemon --lib` 1/1,
+  `pixelens-daemon --test integration` 4/4 (incl. `grab_captured_end_to_end`
+  now drives the clipboard/notify branch via stub slurp/grim). Full
+  `cargo test --workspace` could NOT link due to root-FS disk-full linker
+  bus-errors — worked around per-crate; not an environment/code defect.
+- Commits: `4948048` (notify), `639de9b` (clipboard), `f066f80` (wire),
+  `docs(plan): record M7` (this changelog/progress/milestone updates).
+- Live clipboard/notify QA STILL BLOCKED: headless VM, no Wayland/X11
+  display, no wl-copy/xclip/notify-send installed. Needs a real session.
+- GitHub remote diverged; not pushed (no force-push).
+
+---
 - Implemented **UM1 Hotkey Daemon**:
   - New crate `pixelens-keyhook`: `lib.rs` (trait + `KeyCombo` parse + `fire_grab`),
     `wayland.rs` (evdev reader, no device grab), `x11.rs` (x11rb root grab +
