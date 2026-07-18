@@ -15,9 +15,24 @@ fn main() -> anyhow::Result<()> {
 
     tracing::info!("pixelens-keyhook starting");
 
-    // Combo comes from config (general.hotkey). Fall back to a sane default.
-    let combo_str =
-        std::env::var("PIXELENS_HOTKEY").unwrap_or_else(|_| "Super+Shift+T".to_string());
+    // Combo resolution (M8): env PIXELENS_HOTKEY wins, then the on-disk
+    // config's general.hotkey, then the model default. This makes the
+    // config key actually drive the listener rather than only being
+    // parsed.
+    let env_combo = std::env::var("PIXELENS_HOTKEY").ok();
+    let combo_str = match &env_combo {
+        Some(c) => c.clone(),
+        None => match pixelens_config::load_config() {
+            Ok(cfg) => {
+                tracing::info!(hotkey = %cfg.general.hotkey, "using config hotkey as keyhook combo");
+                cfg.general.hotkey
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "config load failed; using default hotkey");
+                "Super+Shift+T".to_string()
+            }
+        },
+    };
     let combo = KeyCombo::parse(&combo_str)
         .map_err(|e| anyhow::anyhow!("invalid hotkey combo '{combo_str}': {e}"))?;
 

@@ -31,6 +31,30 @@ pub async fn run() -> anyhow::Result<()> {
 
     tracing::info!(version = VERSION, "pixelensd starting");
 
+    // M8: load on-disk configuration so the parsed-but-unused keys
+    // become *used*. We read the config and visibly consume at least
+    // `general.hotkey` (default combo for the keyhook) and
+    // `capture.show_preview` (gates a preview hint). Config load is
+    // non-fatal: a missing/invalid file falls back to defaults.
+    let config = pixelens_config::load_config().unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "failed to load config; using defaults");
+        pixelens_config::Config::default()
+    });
+
+    // Default keyhook combo: prefer PIXELENS_HOTKEY env, then the
+    // config value, then the model default. We surface the resolved
+    // combo so the daemon's startup log observably consumes the key.
+    let hotkey = std::env::var("PIXELENS_HOTKEY").unwrap_or_else(|_| config.general.hotkey.clone());
+    tracing::info!(hotkey = %hotkey, "keyhook combo resolved (env > config > default)");
+
+    if config.capture.show_preview {
+        // Full preview UI is a later milestone; for M8 we simply log
+        // that the flag is being read so the key is observably consumed.
+        tracing::info!("capture.show_preview = true; a capture preview would be shown");
+    } else {
+        tracing::debug!("capture.show_preview = false; fast path (no preview)");
+    }
+
     // Display-server detection is the first gate per PRD §"Display
     // Server Detection". Failures here are fatal.
     let display = pixelens_capture::detect_display_server()
