@@ -47,6 +47,31 @@ _(old entries unchanged)_
 
 ---
 
+---
+
+2026-07-18 | session `hy3` (UM1 hardening slice 2 — user README rewrite)
+- **Rewrote `README.md`** to be honest to the *current* code, not the v1 vision:
+  - New "What works today" table: capture (slurp+grim) ✅, daemon+CLI ✅, hotkey ✅;
+    OCR ❌ NOT YET (M5), clipboard ❌ NOT YET (M7), `pixelens config` CLI ❌ stub,
+    `show_preview`/`autostart`/`theme` parsed-but-not-consumed.
+  - Corrected prior overclaims: "text copied to clipboard in <2s" and "tesseract
+    required at daemon startup" are inaccurate for this build. `handle_grab` returns
+    a screenshot **file path**, not OCR text. Tesseract is noted as a *future* dep.
+  - Documented required runtime deps (slurp, grim) with per-distro install commands;
+    marked tesseract as not-yet-consumed.
+  - Documented X11 as **supported** (x11rb), correcting the "X11 stubbed" assumption.
+  - Documented hotkey: `pixelens hotkey enable|disable|status`, default `Super+Shift+T`,
+    Wayland `input`-group requirement, combo config via `general.hotkey` / `PIXELENS_HOTKEY`.
+  - Config file path, real `[general]`/`[capture]` keys, and a note that the `config`
+    CLI is a stub (edit TOML directly).
+  - Troubleshooting: daemon down, missing slurp/grim, Wayland hotkey not firing
+    (input group), and "capture returns a path not text" expectation.
+- Also corrected `10-progress.md`: M4 X11 is actually DONE (x11rb); M5/M7 still pending.
+- QA: `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets
+  -- -D warnings` clean (no Rust changes, README only). No code behavior changed.
+- Commit `2bb1abf` docs: rewrite README for end users (honest to current build).
+  Files: `README.md` (+157/-76).
+
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
 unrelated changes in one entry.

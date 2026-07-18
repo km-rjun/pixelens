@@ -4,7 +4,7 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 1)_
+_Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 2: user README rewrite)_
 
 ## Build status: 🟢 GREEN
 - `cargo build --workspace` passes.
@@ -23,7 +23,7 @@ _Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 1)_
   real stubs and the daemon pipeline was always correct.
 
 ## Git status
-- Branch: `main` @ `5c89d69` (ahead of `e939894` by fix + UM1 commits)
+- Branch: `main` @ `2bb1abf` (README rewrite slice)
 - Recent commit:
   - `5c89d69` fix(daemon): make integration grim stub self-contained (no external head)
 - Remote push attempted; permission denied (expected — local only)
@@ -35,13 +35,25 @@ _Last updated: 2026-07-18 (session: hy3 — UM1 hardening slice 1)_
   - `6dfb60a` feat(cli): implement real grab/status/stop over IPC (reference)
 
 ## What is actually working
-- M1 setup ✅ · M2 display detection ✅ · M3 v1-Wayland slurp+grim path ✅ ·
-  M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed)
+- M1 setup ✅ · M2 display detection ✅ (Wayland + X11) · M3 v1 slurp+grim capture path ✅
+  (works on both Wayland and X11; grim has X11 support) · M4 X11 **backend is DONE**
+  (x11rb root-window grab in `pixelens-keyhook/src/x11.rs`; capture uses slurp+grim) ·
+  M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed) · UM1 global hotkey ✅
+  (Wayland evdev + X11 x11rb; systemd --user service).
 
 ## What is NOT done (next in line)
-1. M5 OCR (Tesseract warm init) — without it, "text copied" is impossible.
+1. M5 OCR (Tesseract warm init) — `pixelens-ocr` is a skeleton; `handle_grab` returns a
+   **screenshot file path only**, not OCR text. Without M5/M7, "text copied" is impossible.
 2. M7 clipboard + notify (core loop: selection → text on clipboard).
-3. M4 X11 backend, M8 config, M9 tray, M10 packaging, M11 full testing/release.
+3. M8 config (the `pixelens config` CLI is a stub; config keys are parsed but not all
+   consumed) · M9 tray · M10 packaging · M11 full testing/release.
+4. Config keys `show_preview` / `autostart` / `theme` are parsed but **not yet read** by
+   the daemon.
+
+> Honesty note (2026-07-18): an earlier progress entry claimed M4 X11 was NOT done.
+> The code shows X11 is fully implemented (x11rb). Corrected here. Also the existing
+> README overclaimed "text copied to clipboard in <2s" and "tesseract required at
+> startup" — both inaccurate for the current build. README rewritten to match code.
 
 ## Upgrade roadmap (post-v1.0)
 - Upgrade M1: Hotkey daemon — binds global hotkey, systemd service backend
