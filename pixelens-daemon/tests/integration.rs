@@ -149,7 +149,11 @@ async fn grab_captured_end_to_end() {
     env.install_stub("slurp", "#!/bin/sh\nprintf '320x180+10+20'\n");
     env.install_stub(
         "grim",
-        "#!/bin/sh\nout=\"$3\"\nhead -c 1024 /dev/urandom > \"$out\"\n",
+        // Write a 1024-byte capture file using only POSIX shell
+        // builtins. The isolated $PATH in this test contains only the
+        // stubs, so external tools like `head`/`dd` are NOT available
+        // and must not be used here.
+        "#!/bin/sh\nout=\"$3\"\ni=0\nwhile [ $i -lt 1024 ]; do printf '\\0'; i=$((i+1)); done > \"$out\"\n",
     );
 
     let mut child = spawn_daemon(&env);
