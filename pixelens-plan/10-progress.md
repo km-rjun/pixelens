@@ -49,9 +49,18 @@ See `13-roadmap-upgrades.md` for details. Each upgrade requires QA checkpoint
 and safety gate before GitHub push.
 
 ## Documentation added (this session)
-- `pixelens-plan/` — 15 files covering overview, goals, architecture, milestones,
-  per-crate docs, progress, changelog, and roadmap (both v1 and upgrades).
+- `pixelens-plan/` — 18 files: overview, goals, architecture, milestones,
+  per-crate docs, progress, changelog, v1 + upgrade roadmaps, and three
+  detailed upgrade design docs (`14-upgrade-m1-hotkey.md`,
+  `15-upgrade-m2-windows.md`, `16-upgrade-m4-grab-ui.md`).
 - `README.md` — rewritten with setup, quick-start, config, troubleshooting.
+
+## Upgrade milestone tracking (post-v1.0)
+- UM1 Hotkey daemon — 📋 planned, design doc written, **implementation started**
+- UM2 Windows support — 📋 planned, design doc written
+- UM3 Systemd + autostart — 📋 planned (in roadmap)
+- UM4 Grab UI / HUD — 📋 planned, design doc written
+- UM5–UM8 — 📋 planned (in roadmap, no split docs yet)
 
 ## Immediate next action
 Pick your next milestone (recommended: M5 OCR → clipboard), run its QA checklist,

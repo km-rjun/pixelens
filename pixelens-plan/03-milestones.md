@@ -74,3 +74,46 @@ below is **verified against the actual tree and git log**, not assumed.
 ## Blocker before anything else
 **The CLI is broken (M6 client side) and the workspace does not build.**
 Resolving `08-crate-pixelens-cli.md` is priority #1 — see `10-progress.md`.
+
+---
+
+# Upgrade Milestones (post-v1.0)
+
+These extend the product without violating the PRD core: hotkey → select →
+text copied in <2s, **no menus / no cloud / no AI**. Each has a detailed design
+doc and its own QA checkpoint + safety gate.
+
+Status legend: 📋 planned · 🚧 in progress · ✅ done
+
+## UM1 — Hotkey Daemon — 📋 planned (design: `14-upgrade-m1-hotkey.md`)
+- [ ] New crate `pixelens-keyhook` (Wayland evdev + X11 x11rb backends)
+- [ ] `pixelens hotkey enable|disable|status` CLI
+- [ ] systemd `--user` unit generated + installed on enable
+- [ ] Config seed: `[hotkey] enabled, combo`
+- [ ] Hotkey press → daemon `Grab` over existing Unix socket
+
+## UM2 — Windows Support — 📋 planned (design: `15-upgrade-m2-windows.md`)
+- [ ] `cfg(windows)` capture pipeline (WinRT / GDI+ fallback)
+- [ ] Named-pipe IPC transport (Unix socket → `\\.\pipe\pixelens`)
+- [ ] `RegisterHotKey` Win+Shift+S → replaces Snipping Tool
+- [ ] `arboard` clipboard + `winrt-notification` toast
+- [ ] WiX/winget packaging draft
+
+## UM3 — Systemd Service + Autostart — 📋 planned (in `13-roadmap-upgrades.md`)
+- [ ] `pixelens daemon install|uninstall`; socket-activated user unit
+- [ ] `config autostart` toggle
+
+## UM4 — Grab UI / Actions Popup — 📋 planned (design: `16-upgrade-m4-grab-ui.md`)
+- [ ] New crate `pixelens-gui` (egui HUD, keyboard-first)
+- [ ] Hotkey+Space opens transient HUD (g / r / p actions)
+- [ ] IPC: `Command::Redetect`, `Command::SetPreview`
+- [ ] Default grab path unchanged when HUD disabled
+
+## UM5–UM8 — Portal capture, multi-display, on-demand mode, OCR tuning
+See `13-roadmap-upgrades.md` for scope. Not yet split into design docs.
+
+---
+
+## Execution order (recommended)
+1. **UM1** (this session) → 2. UM3 → 3. UM2 (Windows) → 4. UM4 (HUD) →
+   5. UM5–UM8.
