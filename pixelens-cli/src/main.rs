@@ -32,6 +32,7 @@ Commands:
   daemon       Start background daemon
   status       Show daemon status
   stop         Stop daemon
+  hotkey       Manage global hotkey (enable|disable|status)
   config       Manage configuration
 
   version      Show version
@@ -106,6 +107,13 @@ async fn real_main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
+        Some("hotkey") => match run_hotkey(args.get(1).map(String::as_str)).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(1)
+            }
+        },
         Some("config") => {
             println!("'config' command (stub — wired in M8)");
             ExitCode::SUCCESS
@@ -127,6 +135,140 @@ async fn real_main() -> ExitCode {
 
 fn main() -> ExitCode {
     real_main()
+}
+
+/// Resolve the user systemd unit path for the keyhook service.
+fn keyhook_unit_path() -> std::path::PathBuf {
+    let mut dir = dirs_user_systemd();
+    dir.push("pixelens-keyhook.service");
+    dir
+}
+
+fn dirs_user_systemd() -> std::path::PathBuf {
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return std::path::PathBuf::from(xdg).join("systemd/user");
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::PathBuf::from(home).join(".config/systemd/user");
+    }
+    std::path::PathBuf::from(".config/systemd/user")
+}
+
+/// Locate the `pixelens-keyhook` binary on PATH.
+fn keyhook_binary() -> Option<std::path::PathBuf> {
+    if let Ok(out) = std::process::Command::new("which")
+        .arg("pixelens-keyhook")
+        .output()
+    {
+        if out.status.success() {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(std::path::PathBuf::from(p));
+            }
+        }
+    }
+    // Fallbacks
+    [
+        std::path::PathBuf::from("/usr/bin/pixelens-keyhook"),
+        std::path::PathBuf::from(".cargo/bin/pixelens-keyhook"),
+    ]
+    .into_iter()
+    .find(|cand| cand.exists())
+}
+
+fn keyhook_combo() -> String {
+    std::env::var("PIXELENS_HOTKEY").unwrap_or_else(|_| "Super+Shift+T".to_string())
+}
+
+fn unit_content(bin: &std::path::Path) -> String {
+    format!(
+        "[Unit]\n\
+         Description=Pixelens global hotkey listener\n\
+         After=pixelens.service\n\
+         PartOf=pixelens.service\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         ExecStart={bin}\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         \n\
+         [Install]\n\
+         WantedBy=default.target\n",
+        bin = bin.display()
+    )
+}
+
+fn systemctl(args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("systemctl");
+    cmd.arg("--user");
+    cmd.args(args);
+    cmd
+}
+
+async fn run_hotkey(sub: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    match sub {
+        Some("enable") => {
+            let bin = keyhook_binary().ok_or("pixelens-keyhook binary not found on PATH")?;
+            let unit = keyhook_unit_path();
+            if let Some(parent) = unit.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&unit, unit_content(&bin))?;
+            println!("installed unit: {}", unit.display());
+
+            let status = systemctl(&["daemon-reload"]).status()?;
+            if !status.success() {
+                return Err("systemctl daemon-reload failed".into());
+            }
+            let status = systemctl(&["enable", "--now", "pixelens-keyhook"]).status()?;
+            if !status.success() {
+                return Err("systemctl enable --now pixelens-keyhook failed".into());
+            }
+            println!(
+                "hotkey enabled (combo: {}). Press it to grab.",
+                keyhook_combo()
+            );
+            Ok(())
+        }
+        Some("disable") => {
+            let _ = systemctl(&["disable", "--now", "pixelens-keyhook"]).status();
+            let unit = keyhook_unit_path();
+            if unit.exists() {
+                std::fs::remove_file(&unit).ok();
+            }
+            println!("hotkey disabled");
+            Ok(())
+        }
+        Some("status") => {
+            let out = systemctl(&["is-active", "pixelens-keyhook"]).output()?;
+            let active = out.status.success();
+            let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            println!(
+                "hotkey service: {}",
+                if active { &state } else { "inactive" }
+            );
+            println!("combo: {}", keyhook_combo());
+            println!(
+                "daemon: {}",
+                if socket_path().map(|p| p.exists()).unwrap_or(false) {
+                    "up"
+                } else {
+                    "down"
+                }
+            );
+            Ok(())
+        }
+        other => {
+            eprintln!("usage: pixelens hotkey <enable|disable|status>");
+            if let Some(cmd) = other {
+                return Err(format!("unknown hotkey subcommand '{cmd}'").into());
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Resolve the daemon socket path. Mirrors the daemon's `socket_path()`

@@ -10,6 +10,7 @@ members = [
     "pixelens-notify",
     "pixelens-daemon",
     "pixelens-cli",
+    "pixelens-keyhook",
 ]
 
 [workspace.package]
@@ -30,6 +31,7 @@ pixelens-ocr = { path = "pixelens-ocr" }
 pixelens-capture = { path = "pixelens-capture" }
 pixelens-overlay = { path = "pixelens-overlay" }
 pixelens-notify = { path = "pixelens-notify" }
+pixelens-keyhook = { path = "pixelens-keyhook" }
 
 # External dependencies pinned at workspace level
 serde = { version = "1.0", features = ["derive"] }

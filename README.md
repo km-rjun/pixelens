@@ -30,6 +30,15 @@ no menus.
    # or: ./target/release/pixelens copy
    ```
 
+5. (Optional) Bind a global hotkey so you never type the command:
+   ```bash
+   ./target/release/pixelens hotkey enable
+   ```
+   Now press **Super+Shift+T** (configurable via `general.hotkey` / the
+   `PIXELENS_HOTKEY` env var) anywhere to trigger a grab. On Wayland, the
+   listener reads raw input devices, so your user must be in the `input`
+   group: `sudo usermod -aG input $USER` then re-login.
+
 The selected region's text is now on your clipboard.
 
 ## Dependencies
@@ -49,6 +58,7 @@ prints installation instructions and exits.
 pixelens grab, copy   Select region → copy text to clipboard
 pixelens status        Show daemon version and display server
 pixelens stop          Stop the daemon
+pixelens hotkey        Manage global hotkey (enable|disable|status)
 pixelens config        Manage settings (see below)
 pixelens version       Show version
 pixelens help          Show help
@@ -103,6 +113,12 @@ the appropriate command.
 
 **Clipboard empty after grab:**
 The region may contain no detectable text. Or Tesseract may not be installed.
+
+**Hotkey not firing on Wayland:**
+The keyhook reads `/dev/input/event*` directly. Your user must be in the
+`input` group: `sudo usermod -aG input $USER`, then log out and back in.
+Check with `groups`. If the group is missing, `pixelens hotkey status` will
+report the listener as inactive and the daemon logs a clear error.
 
 ## License
 

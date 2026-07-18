@@ -56,7 +56,9 @@ and safety gate before GitHub push.
 - `README.md` — rewritten with setup, quick-start, config, troubleshooting.
 
 ## Upgrade milestone tracking (post-v1.0)
-- UM1 Hotkey daemon — 📋 planned, design doc written, **implementation started**
+- UM1 Hotkey daemon — 🚧 in progress: `pixelens-keyhook` crate done, CLI
+  `hotkey` subcommand done, systemd unit generation done. Manual QA pending
+  (needs real Wayland/X11 session — headless env blocks it).
 - UM2 Windows support — 📋 planned, design doc written
 - UM3 Systemd + autostart — 📋 planned (in roadmap)
 - UM4 Grab UI / HUD — 📋 planned, design doc written

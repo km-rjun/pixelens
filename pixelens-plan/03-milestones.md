@@ -85,12 +85,13 @@ doc and its own QA checkpoint + safety gate.
 
 Status legend: 📋 planned · 🚧 in progress · ✅ done
 
-## UM1 — Hotkey Daemon — 📋 planned (design: `14-upgrade-m1-hotkey.md`)
-- [ ] New crate `pixelens-keyhook` (Wayland evdev + X11 x11rb backends)
-- [ ] `pixelens hotkey enable|disable|status` CLI
-- [ ] systemd `--user` unit generated + installed on enable
-- [ ] Config seed: `[hotkey] enabled, combo`
-- [ ] Hotkey press → daemon `Grab` over existing Unix socket
+## UM1 — Hotkey Daemon — 🚧 in progress (design: `14-upgrade-m1-hotkey.md`)
+- [x] New crate `pixelens-keyhook` (Wayland evdev + X11 x11rb backends)
+- [x] `pixelens hotkey enable|disable|status` CLI
+- [x] systemd `--user` unit generated + installed on enable
+- [ ] Config seed: `[hotkey] enabled, combo` (deferred to M8 config file I/O)
+- [x] Hotkey press → daemon `Grab` over existing Unix socket
+- [ ] Manual QA on real Wayland + X11 session (blocked: headless env)
 
 ## UM2 — Windows Support — 📋 planned (design: `15-upgrade-m2-windows.md`)
 - [ ] `cfg(windows)` capture pipeline (WinRT / GDI+ fallback)
