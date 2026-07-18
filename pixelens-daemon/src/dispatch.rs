@@ -9,7 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use pixelens_capture::GrabOutcome;
 use pixelens_ipc::{GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus};
+use pixelens_notify::{NotificationKind, Notifier, NotifySend};
 
+use crate::clipboard::copy_text;
 use crate::state::DaemonState;
 
 pub struct Dispatcher {
@@ -91,6 +93,31 @@ impl Dispatcher {
                         String::new()
                     }
                 };
+
+                // M7: complete the core loop. The capture + OCR already
+                // succeeded above; now push the result to the user:
+                //  - non-empty text → copy to clipboard + "text copied" toast
+                //  - empty text      → "no text found" toast (NOT an error)
+                // Both clipboard and notify are best-effort and must never
+                // turn a successful capture into a failed grab.
+                let notifier = NotifySend::new();
+                if text.is_empty() {
+                    tracing::info!("grab produced no text; notifying 'no text found'");
+                    if let Err(e) = notifier.send(NotificationKind::NoTextFound) {
+                        tracing::warn!(error = %e, "failed to send 'no text found' notification");
+                    }
+                } else {
+                    match copy_text(&text, self.state.display) {
+                        Ok(()) => tracing::info!("copied extracted text to clipboard"),
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            "clipboard copy failed; continuing without clipboard text"
+                        ),
+                    }
+                    if let Err(e) = notifier.send(NotificationKind::TextCopied) {
+                        tracing::warn!(error = %e, "failed to send 'text copied' notification");
+                    }
+                }
 
                 let payload = GrabResponsePayload {
                     path: path.to_string_lossy().into_owned(),
