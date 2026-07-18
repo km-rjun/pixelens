@@ -5,6 +5,7 @@
 //! integration tests exercise the dispatcher, IPC server, and capture
 //! pipeline without spawning a subprocess.
 
+pub mod clipboard;
 pub mod dispatch;
 pub mod ipc;
 pub mod state;
