@@ -133,15 +133,15 @@ impl TesseractOcrEngine {
 
 impl OcrEngine for TesseractOcrEngine {
     /// OCR from an in-memory [`CaptureImage`] by encoding it to a temp
-    /// PNG and delegating to [`Self::extract_from_path`].
+    /// BMP and delegating to [`Self::extract_from_path`].
     fn extract_text(&self, image: &CaptureImage) -> Result<String, OcrError> {
         if image.is_empty() {
             return Err(OcrError::UnsupportedImage);
         }
-        let png_path = temp_base() + ".png";
-        encode_image_as_png(image, &png_path)?;
-        let result = self.extract_from_path(Path::new(&png_path));
-        let _ = std::fs::remove_file(&png_path);
+        let bmp_path = temp_base() + ".bmp";
+        encode_image_as_bmp(image, &bmp_path)?;
+        let result = self.extract_from_path(Path::new(&bmp_path));
+        let _ = std::fs::remove_file(&bmp_path);
         result
     }
 }
@@ -188,7 +188,7 @@ pub fn sanitize_text(raw: &str) -> String {
 /// BMP is uncompressed and natively read by leptonica (hence
 /// tesseract), so we avoid pulling in a PNG encoder dependency. RGBA
 /// is converted to RGB (alpha dropped) since BMP here is 24 bpp.
-fn encode_image_as_png(image: &CaptureImage, path: &str) -> Result<(), OcrError> {
+fn encode_image_as_bmp(image: &CaptureImage, path: &str) -> Result<(), OcrError> {
     let w = image.width;
     let h = image.height;
     let stride = image.stride as usize;
