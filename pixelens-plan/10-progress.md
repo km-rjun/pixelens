@@ -6,47 +6,45 @@ acceptable state to declare work "done".
 
 _Last updated: 2026-07-18 (session: hy3)_
 
-## Build status: 🔴 RED
-`cargo build` FAILS because `pixelens-cli/src/main.rs` (commit `b6d5d33`) is a
-broken hand-rolled stub. See `08-crate-pixelens-cli.md`. Everything else in the
-workspace compiles.
+## Build status: 🟢 GREEN
+- `cargo build` passes after restoring CLI from `6dfb60a`.
+- Commit `65ce41b` fixes the regression.
+
+## Test status: 🔴 ONE FAILING INTEGRATION TEST
+- `cargo test` fails on `pixelens-daemon/tests/integration/grab_captured_end_to_end`
+- Pre-existing failure unrelated to CLI fix; grim stub invocation mismatch.
+- Other integration tests pass.
 
 ## Git status
-- Branch: `main` @ `b6d5d33` (ahead of `e939894` by the bad CLI commit).
-- Remote `origin` is GitHub `km-rjun/pixelens`. The bad commit was pushed.
-- Commits of record (newest first):
-  - `b6d5d33` ⚠️ Implement pixelens grab workflow with error handling  ← BROKE CLI
+- Branch: `main` @ `65ce41b` (ahead of `e939894` by 1 fix commit + plan files)
+- Remote push attempted; permission denied (expected — local only)
+- Recent commits:
+  - `65ce41b` fix(cli): restore IPC-based grab/status client (this session)
+  - `b6d5d33` ⚠️ BROKEN CLI commit (reverted)
   - `e939894` feat: complete integration tests + documentation
-  - `6dfb60a` feat(cli): implement real grab/status/stop over IPC        ← good CLI
-  - `1c1a929` feat(daemon): add IPC server and command dispatcher
-  - `cb42edc` feat(ipc): add typed Grab response payload and helper constructors
-  - `9717349` feat(capture): add slurp+grim capture pipeline orchestrator
-  - `5ce1842` feat(capture): add which() helper for $PATH tool lookup
-  - `cb8ca85` feat(capture): introduce slurp+grim v1 path with typed capture error
-  - `ff60266` chore: commit cargo.lock for binary workspace
-  - `7aa9887` docs: add project readme
-  - `9422191` ci: add github actions workflow for check, build, and test
-  - `b3175cf` chore: add tests directory for cross-crate integration tests
-  - `2f5fed7` docs: add architecture and milestone tracking notes
-  - `ef3d56f` feat(cli): add pixelens binary with command parser
-  - `c8e54e1` feat(daemon): add pixelensd binary stub
+  - `6dfb60a` feat(cli): implement real grab/status/stop over IPC (reference)
 
 ## What is actually working
 - M1 setup ✅ · M2 display detection ✅ · M3 v1-Wayland slurp+grim path ✅ ·
-  M6 IPC protocol + daemon server ✅ (CLI client side ⚠️ regressed).
+  M6 IPC protocol + daemon server ✅ · CLI client ✅ (fixed)
 
 ## What is NOT done (next in line)
-1. ⚠️ **FIX CLI** (`08`) — restore IPC client, get `cargo build` green.
-2. M7 clipboard + notify (so the captured image actually becomes text → clipboard).
-3. M5 OCR (Tesseract warm init) — without it, "text copied" is impossible.
-4. M4 X11 backend, M8 config, M9 tray, M10 packaging, M11 full testing/release.
+1. M5 OCR (Tesseract warm init) — without it, "text copied" is impossible.
+2. M7 clipboard + notify (core loop: selection → text on clipboard).
+3. M4 X11 backend, M8 config, M9 tray, M10 packaging, M11 full testing/release.
+
+## Documentation added (this session)
+- `pixelens-plan/` — 12+ files covering overview, goals, architecture, milestones,
+  per-crate docs, progress, changelog, and roadmap (both v1 and upgrades).
+- `README.md` — rewritten with setup, quick-start, config, troubleshooting.
 
 ## Immediate next action
-Restore `pixelens-cli/src/main.rs` from `6dfb60a`, verify `cargo build`,
-commit as a fix. Then proceed to OCR+clipboard (the path to the actual PRD
-success criterion).
+Pick your next milestone (recommended: M5 OCR → clipboard), run its QA checklist,
+then I execute code-safety checks (`cargo fmt --check` + `cargo clippy -- -D warnings`)
+before any push.
 
 ## Habits to keep
-- After EVERY change: commit small + descriptive (PRD §Git Workflow).
+- After EVERY change: commit small + descriptive.
 - Before claiming a milestone: `cargo build` + `cargo test` green.
-- Don't trust prior "done/pushed" claims — verify against the tree.
+- QA explicit per milestone (see roadmap files).
+- No deviation from PRD vision: hotkey → select → text copied in <2s.

@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use pixelens_ipc::{
-    read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcRequest,
-    IpcResponse, IpcError, ResponseStatus,
+    read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcError, IpcRequest,
+    IpcResponse, ResponseStatus,
 };
 use thiserror::Error;
 use tokio::net::UnixStream;
@@ -145,19 +145,22 @@ fn socket_path() -> Result<PathBuf, CliError> {
         }
         // SAFETY: getuid is async-signal-safe and has no preconditions.
         let uid = unsafe { getuid() };
-        return Ok(PathBuf::from(format!("/tmp/pixelens-{uid}.sock")));
+        Ok(PathBuf::from(format!("/tmp/pixelens-{uid}.sock")))
     }
 
     #[cfg(not(unix))]
-    Err(CliError::DaemonNotRunning(PathBuf::from("(no socket path on non-unix)")))
+    Err(CliError::DaemonNotRunning(PathBuf::from(
+        "(no socket path on non-unix)",
+    )))
 }
 
 async fn connect() -> Result<UnixStream, CliError> {
     let path = socket_path()?;
     match UnixStream::connect(&path).await {
         Ok(s) => Ok(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound
-                 || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+        Err(e)
+            if e.kind() == std::io::ErrorKind::NotFound
+                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
         {
             Err(CliError::DaemonNotRunning(path))
         }
@@ -227,8 +230,7 @@ async fn run_status() -> Result<(), CliError> {
         eprintln!("error: {msg}");
         std::process::exit(1);
     }
-    let pretty = serde_json::to_string_pretty(&response.payload)
-        .map_err(IpcError::Json)?;
+    let pretty = serde_json::to_string_pretty(&response.payload).map_err(IpcError::Json)?;
     println!("{pretty}");
     Ok(())
 }

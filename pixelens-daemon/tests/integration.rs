@@ -12,8 +12,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use pixelens_ipc::{
-    read_response, write_frame, Command as IpcCommand, GrabResponsePayload, IpcRequest, IpcResponse,
-    ResponseStatus,
+    read_response, write_frame, Command as IpcCommand, GrabResponsePayload, IpcRequest,
+    IpcResponse, ResponseStatus,
 };
 use tokio::net::UnixStream;
 use uuid::Uuid;
