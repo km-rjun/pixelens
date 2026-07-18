@@ -5,6 +5,11 @@
 //! M1 just defines the data model so other crates can refer to
 //! `Config` without circular deps.
 
+pub mod io;
 pub mod model;
 
+pub use io::{
+    config_path, get_value, load_config, load_config_from, save_config, save_config_to, set_value,
+    ConfigError, KNOWN_KEYS,
+};
 pub use model::{CaptureConfig, Config, GeneralConfig, OcrConfig};
