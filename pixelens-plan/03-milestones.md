@@ -32,10 +32,24 @@ below is **verified against the actual tree and git log**, not assumed.
 - [ ] Rectangle selection — stub only
 - [ ] Screen capture — stub only
 
-## M5 — OCR — ❌
-- [ ] Tesseract dependency validation at startup — NOT in daemon startup yet
-- [ ] `TesseractOcrEngine` with warm init — stub only (`pixelens-ocr`)
-- [ ] AT-SPI native extraction attempt with OCR fallback — not started
+## M5 — OCR — 🟡 partial (engine + daemon wiring done; live QA not exercised)
+- [x] Tesseract dependency validation at startup — `TesseractOcrEngine::new()`
+      runs `tesseract --version`; returns `OcrError::EngineMissing` if absent.
+      Wired into daemon `run()`: missing tesseract logs a warn, **not fatal** —
+      capture still works, grabs return empty `text`.
+- [x] `TesseractOcrEngine` with warm init — implemented in `pixelens-ocr/src/lib.rs`:
+      `new()`, `with_config(lang, psm)`, `extract_from_path(&Path)`, `extract_text(&CaptureImage)`
+      (encodes `CaptureImage` to 24-bit BMP, no extra crate deps).
+- [x] Daemon `handle_grab` runs OCR on the captured PNG and attaches `text` to
+      `GrabResponsePayload` (new `#[serde(default)]` field in `pixelens-ipc`).
+- [x] OCR failure is non-fatal: capture returns path + empty text.
+- [ ] AT-SPI native extraction attempt with OCR fallback — not started (post-v1).
+- [ ] Live OCR end-to-end QA — **blocked**: headless VM has no display + no real
+      screenshot; the unit tests cover sanitize + error paths only (no tesseract
+      binary required at test time, though tesseract IS installed here).
+> Tesseract 5.5.0 is installed on this host; the engine *would* run live, but a
+> real Wayland/X11 screenshot cannot be produced headless. Live OCR QA (real
+> image → text) is deferred to a session with a display.
 
 ## M6 — IPC — ✅ (substantially)
 - [x] Length-prefixed JSON socket protocol (`pixelens-ipc::codec`)

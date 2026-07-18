@@ -90,6 +90,72 @@ _(old entries unchanged)_
 
 ---
 
+2026-07-18 | session `hy3` (M5 — OCR engine + daemon wiring)
+- **Implemented `TesseractOcrEngine`** in `pixelens-ocr/src/lib.rs` (was a skeleton):
+  - `new()` validates tesseract presence via `tesseract --version`; returns
+    `OcrError::EngineMissing` if absent (PRD dependency validation at startup).
+  - `with_config(lang, psm)` + `extract_from_path(&Path)`: shells out to
+    `tesseract <in> <out_base> -l <lang> --psm <n>`. NOTE: it does NOT use
+    stdout — tesseract treats `<out_base>` as a *basename* and writes
+    `<out_base>.txt`; the engine reads that `.txt` file and returns the
+    trimmed text. Handles non-zero exit, missing `.txt` output, empty
+    output, unsupported-image (wrong format) errors.
+  - `extract_text(&CaptureImage)` trait impl: encodes `CaptureImage` to a 24-bit
+    BMP (hand-rolled, no extra crate deps) and writes it to a temp file with a
+    `.bmp` extension, then reuses `extract_from_path`.
+    BMP chosen over PNG/PPM to avoid png/image/flate2 deps and guarantee
+    leptonica support; the temp file uses a `.bmp` extension to match its
+    real content (fixed 2026-07-18: it previously used a misleading `.png`
+    extension).
+  - Pure `sanitize_text()` helper (trim lines, collapse blank runs, drop trailing
+    blank lines) so the post-processing logic is unit-testable without tesseract.
+- **IPC** (`pixelens-ipc/src/protocol.rs`): added `pub text: String` to
+  `GrabResponsePayload` with `#[serde(default)]` (backward-compatible).
+- **Daemon wiring** (`pixelens-daemon`):
+  - `DaemonState` now holds `ocr: Option<TesseractOcrEngine>` (warm).
+  - `run()` warm-inits the engine after the pipeline is ready; missing tesseract
+    logs a warn and continues (capture still works, grabs return empty text).
+  - `handle_grab` runs `extract_from_path` on the captured PNG after a
+    `GrabOutcome::Captured` and attaches `text` to the response. OCR failure is
+    non-fatal: capture still returns (path + empty text). **M7 clipboard copy
+    is deliberately NOT done here** — next iteration.
+- **Tests** (`cargo test -p pixelens-ocr`): 5 passed. Covers `sanitize_text`
+  behavior + the error path (`new()` NotFound branch, missing-file `extract_from_path`
+  error) WITHOUT requiring a tesseract binary at test time.
+- QA: `cargo build --workspace` green; `cargo clippy --workspace --all-targets
+  -- -D warnings` clean; `cargo fmt --all -- --check` clean.
+  `cargo test -p pixelens-daemon` 4/4 pass (incl. `grab_payload_round_trips`);
+  `cargo test -p pixelens-ipc` 4/4 pass.
+- **Live OCR end-to-end (real screenshot → text) NOT exercised**: headless VM has
+  no display, so a real Wayland/X11 capture cannot be produced. Tesseract 5.5.0 is
+  installed on this host and the engine *would* run, but only on a real image.
+- Commits: `2e4355e` (ocr engine), `c45e3b2` (ipc text field), `766a034` (daemon wiring).
+- GitHub: NOT pushed — `git push --dry-run origin main` REJECTS (remote diverged).
+  Do not force-push.
+
+---
+
+2026-07-18 | session `hy3` (REVISE — fix OCR temp-file extension + doc accuracy)
+- **Code fix** in `pixelens-ocr/src/lib.rs`: `extract_text` encoded `CaptureImage`
+  to 24-bit BMP bytes but wrote the temp file with a `.png` extension
+  (misleading to readers/tesseract). Renamed the temp extension to `.bmp`
+  and renamed the helper `encode_image_as_png` → `encode_image_as_bmp` to match.
+  Behavior unchanged: tesseract still reads the file via `extract_from_path`
+  (which reads `<out_base>.txt`), NOT stdout.
+- **Doc accuracy correction**: prior M5 changelog text claimed
+  `extract_from_path` "shells out to `tesseract <in> stdout`". That was WRONG.
+  The engine writes a temp file and reads `<basename>.txt`; it does not use
+  stdout. Corrected here and in the M5 entry above.
+- Also corrected: 10-progress.md + 03-milestones.md now state the temp image
+  extension is `.bmp`.
+- QA: `cargo fmt --all` clean; `cargo clippy --workspace --all-targets -- -D warnings`
+  clean; `cargo test -p pixelens-ocr` 5/5 pass.
+- Commit `d22ecab` fix(ocr): name temp image .bmp to match BMP-encoded bytes.
+- GitHub: NOT pushed — `git push --dry-run origin main` still REJECTS (remote
+  has commits local lacks; diverged history). Do not force-push.
+
+---
+
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
 unrelated changes in one entry.
