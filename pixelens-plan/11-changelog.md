@@ -228,6 +228,40 @@ _(old entries unchanged)_
 
 ---
 
+2026-07-19 | session `hy3` (UM3 — Autostart / XDG .desktop integration)
+- Implemented **UM3 Systemd + autostart integration**:
+  - New `pixelens-cli` `autostart` subcommand: `enable | disable | status`.
+    - `autostart_dir()` honors `$XDG_CONFIG_HOME`, falls back to
+      `~/.config/autostart`.
+    - `autostart_desktop_content(bin)` emits a valid XDG `pixelens.desktop`
+      (`[Desktop Entry]`, `Type=Application`, `Name=Pixelens`,
+      `Exec=<keyhook bin>`, `X-GNOME-Autostart-enabled=true`).
+    - Pure helpers `write_autostart_desktop(dir, bin)` and
+      `remove_autostart_desktop(dir)` — no side effects on the live config,
+      headless-safe, unit-testable.
+  - `config set general.autostart <true|false>` now keeps the `.desktop` in
+    sync: `true/1/yes/on` writes it (best-effort; warns if the keyhook binary
+    isn't on `PATH`), any other value removes it. Non-fatal.
+  - Complements UM1's systemd `--user` service (two independent autostart
+    mechanisms, as designed).
+- **Tests** (`cargo test -p pixelens-cli`): 2 new — `autostart_desktop_round_trip`
+  (write→content assertions→remove→idempotent remove) and
+  `autostart_dir_honors_xdg_config_home`. Both pass.
+- QA: `cargo fmt --all -- --check` clean; `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo build -p pixelens-cli` exits 0;
+  `cargo test -p pixelens-cli` 2/2 pass. NOTE: full `cargo build --workspace`
+  / `cargo test --workspace` cannot LINK on this VM (root FS 83-94% full →
+  ENOSPC bus-errors); verified per-crate instead. Not a code defect.
+- Live autostart QA NOT exercised: headless VM, no display server; the
+  `.desktop` file is written/removed correctly but whether a real session
+  launches pixelens on login needs a desktop environment to confirm.
+- WORKER subagent timed out on the heavy cargo verify slice (600s API
+  ceiling); main agent re-ran and confirmed all gates directly.
+- Pushed to `features/core-loop` (fast-forward; `origin/main` untouched —
+  unrelated history, no force-push).
+
+---
+
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
 unrelated changes in one entry.

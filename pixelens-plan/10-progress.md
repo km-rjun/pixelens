@@ -4,14 +4,18 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-18 (session: hy3 — M8 configuration)_
+_Last updated: 2026-07-19 (session: hy3 — UM3 autostart)_
 
-## Build status: 🟢 GREEN (code) · ⚠️ link pressure (disk 86% after clean)
-- `cargo build --workspace` passes (all binaries link OK).
-- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+## Build status: 🟢 GREEN (per-crate) · ⚠️ workspace link pressure (disk ~83-94%)
+- `cargo build -p pixelens-cli` (and other per-crate builds) pass.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean (per-crate
+  compiles; the workspace link step is flaky only under disk pressure).
 - `cargo fmt --all -- --check` clean.
-- ENVIRONMENT NOTE: root FS ~86% full after `cargo clean`; workspace tests
-  were run per-crate to avoid full-workspace link pressure.
+- ENVIRONMENT NOTE: root FS routinely 83-100% full. A full `cargo build
+  --workspace` / `cargo test --workspace` cannot LINK (ENOSPC bus-errors on
+  this VM). Mitigation that works: `cargo clean` first, then per-crate
+  `cargo build -p <crate>` + per-crate `cargo test -p <crate>`. Never claim a
+  full-workspace link passed when it couldn't link.
 
 ## Test status: 🟢 ALL GREEN (per-crate)
 - `cargo test -p pixelens-config` → 3 passed; 0 failed
@@ -80,8 +84,8 @@ _Last updated: 2026-07-18 (session: hy3 — M8 configuration)_
   loads config and LOGS `general.hotkey` (resolved env>config>default) + gates
   `capture.show_preview` log. `pixelens-keyhook` uses `general.hotkey` as its
   default combo (env still wins). CLI `keyhook` reports the config default.
-4. Config keys `show_preview` / `autostart` / `theme` are parsed but **not yet read** by
-   the daemon.
+4. Config keys `autostart` / `theme` are parsed; `autostart` IS now consumed
+   (UM3, see below). `theme` still parsed but not read by the daemon (UI work).
 
 > Honesty note (2026-07-18): an earlier progress entry correctly stated the README
 > overclaimed "text copied to clipboard in <2s" and "tesseract required at startup" —
@@ -117,18 +121,26 @@ and safety gate before GitHub push.
   `hotkey` subcommand done, systemd unit generation done. Manual QA pending
   (needs real Wayland/X11 session — headless env blocks it).
 - UM2 Windows support — 📋 planned, design doc written
-- UM3 Systemd + autostart — 📋 planned (in roadmap)
-4. Config keys `autostart` / `theme` are parsed and persisted but not yet
-   actively consumed by the daemon (deferred: `autostart` → UM3 systemd,
-   `theme` → UI). `show_preview` + `general.hotkey` ARE consumed in M8.
+- UM3 Systemd + autostart — ✅ DONE (2026-07-19): `pixelens-cli autostart
+  enable|disable|status` manages `~/.config/autostart/pixelens.desktop` (XDG
+  autostart spec; honors XDG_CONFIG_HOME, falls back to ~/.config). Pure
+  helpers `write_autostart_desktop`/`remove_autostart_desktop` are unit-tested
+  (round-trip + idempotent remove). `config set general.autostart true|false`
+  now keeps the .desktop in sync (best-effort, non-fatal). Complements UM1's
+  systemd --user service. Manual QA of actual desktop autostart pending
+  (needs a real session — headless blocks it).
+- Config keys `autostart` / `theme`: `autostart` IS now consumed (UM3). `theme`
+  still parsed but not read by the daemon (UI work). `show_preview` +
+  `general.hotkey` consumed in M8.
 
 ## Immediate next action
-M8 (configuration) is DONE and committed: config is now USED (CLI get/set/list
-+ daemon consumes `general.hotkey` + `capture.show_preview`). Next slice:
-**M9 tray** (system tray icon + menu) or **UM3 systemd + autostart** (consume
-`general.autostart`). Before claiming the full core loop works, run live
-OCR+clipboard+notify QA on a machine with a real Wayland/X11 display and
-wl-copy/xclip + notify-send installed.
+M8 (configuration) ✅ and UM3 (autostart) ✅ are DONE and committed to
+`features/core-loop`. Core loop + config + autostart are code-complete and
+verified (fmt/clippy/per-crate build/test green; full-workspace link blocked by
+disk ENOSPC, per-crate used instead). Remaining upgrade work: **UM2 Windows**,
+**UM4 Grab UI**, UM5–UM8. Before claiming the full core loop works live, run
+OCR+clipboard+notify QA on a real Wayland/X11 display with wl-copy/xclip +
+notify-send. _Last updated: 2026-07-19 (session: hy3 — UM3 autostart)._
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.
