@@ -14,6 +14,62 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub use super::protocol::{IpcError, IpcRequest, IpcResponse};
 
+/// Named pipe path used by the Windows daemon/client. Resolved by
+/// [`windows_pipe_path`] so the string stays a single source of truth.
+pub const WINDOWS_PIPE_NAME: &str = "pixelens";
+
+/// Windows named-pipe full path: `\\.\pipe\pixelens`.
+pub fn windows_pipe_path() -> String {
+    format!("\\\\.\\pipe\\{WINDOWS_PIPE_NAME}")
+}
+
+/// A transport-agnostic duplex stream over which the codec frames.
+#[cfg(unix)]
+pub type IpcStream = tokio::net::UnixStream;
+
+/// A transport-agnostic duplex stream over which the codec frames.
+#[cfg(windows)]
+pub type IpcStream = tokio::net::windows::named_pipe::NamedPipeClient;
+
+/// Connect to the running daemon. Unix uses a `UnixStream`; Windows uses
+/// the `\\.\pipe\pixelens` named pipe. The codec on top is identical.
+pub async fn connect() -> Result<IpcStream, FrameError> {
+    #[cfg(unix)]
+    {
+        let path = super::socket_path();
+        Ok(tokio::net::UnixStream::connect(path).await?)
+    }
+    #[cfg(windows)]
+    {
+        use tokio::net::windows::named_pipe::ClientOptions;
+        let client = ClientOptions::new()
+            .open(windows_pipe_path())
+            .map_err(FrameError::Io)?;
+        Ok(client)
+    }
+}
+
+/// Bind a server-side listener. Unix returns a `UnixListener`; Windows a
+/// `NamedPipeServer`. Listener types differ, so this stays typed per-OS.
+#[cfg(unix)]
+pub async fn bind() -> Result<tokio::net::UnixListener, FrameError> {
+    let path = super::socket_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    Ok(tokio::net::UnixListener::bind(&path)?)
+}
+
+/// Bind a server-side named-pipe listener on Windows.
+#[cfg(windows)]
+pub async fn bind() -> Result<tokio::net::windows::named_pipe::NamedPipeServer, FrameError> {
+    use tokio::net::windows::named_pipe::ServerOptions;
+    let server = ServerOptions::new()
+        .create(windows_pipe_path())
+        .map_err(FrameError::Io)?;
+    Ok(server)
+}
+
 /// 16 MiB. Generous enough for any reasonable config or status payload,
 /// small enough that a misbehaving peer can't OOM us.
 pub const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
@@ -101,4 +157,60 @@ where
     stream.write_all(body).await?;
     stream.flush().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Command, ResponseStatus};
+
+    use super::*;
+
+    #[test]
+    fn windows_pipe_path_is_canonical() {
+        assert_eq!(windows_pipe_path(), "\\\\.\\pipe\\pixelens");
+    }
+
+    // Round-trip the codec over an in-memory duplex pair. Transport-agnostic:
+    // works unchanged on any `AsyncRead + AsyncWrite` stream, including a
+    // Windows named pipe.
+    #[tokio::test]
+    async fn codec_round_trips_request_and_response() {
+        let (mut a, mut b) = tokio::io::duplex(4096);
+
+        let req = IpcRequest {
+            request_id: "req-1".to_string(),
+            command: Command::Grab,
+            payload: serde_json::json!({ "region": "full" }),
+        };
+        write_frame(&req, &mut a).await.unwrap();
+
+        let received = read_frame(&mut b).await.unwrap();
+        assert_eq!(received.request_id, "req-1");
+        assert_eq!(received.command, Command::Grab);
+        assert_eq!(received.payload["region"], "full");
+
+        let resp = IpcResponse {
+            request_id: "req-1".to_string(),
+            status: ResponseStatus::Ok,
+            payload: serde_json::json!({ "text": "hello" }),
+        };
+        write_response(&resp, &mut b).await.unwrap();
+        let received_resp = read_response(&mut a).await.unwrap();
+        assert_eq!(received_resp.status, ResponseStatus::Ok);
+        assert_eq!(received_resp.payload["text"], "hello");
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_is_rejected() {
+        let (mut a, mut b) = tokio::io::duplex(4096);
+        // Claim a body far larger than MAX_FRAME_SIZE.
+        let len = (MAX_FRAME_SIZE as u32 + 1).to_be_bytes();
+        a.write_all(&len).await.unwrap();
+        a.flush().await.unwrap();
+        let err = read_frame_body(&mut b).await.unwrap_err();
+        assert!(matches!(
+            err,
+            FrameError::Ipc(IpcError::FrameTooLarge { .. })
+        ));
+    }
 }

@@ -11,3 +11,7 @@ description = "Notification abstraction (libnotify / xdg-desktop-portal)"
 [dependencies]
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winrt-notification = "0.5"
+arboard = "3"

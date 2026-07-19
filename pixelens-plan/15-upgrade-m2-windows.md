@@ -3,7 +3,7 @@
 **Depends on**: v1.0 core loop + Upgrade M1 (hotkey). Windows must **replace
 the Snipping Tool** — i.e. the same `Win+Shift+S` muscle memory triggers
 Pixelens instead.
-**Status**: 📋 planned · **Owner**: odin.
+**Status**: 🟡 implemented (compiles + type-checks on `x86_64-pc-windows-msvc`; native Windows run pending) · **Owner**: odin.
 
 ---
 
@@ -105,3 +105,51 @@ README: *Settings → Ease of Access → Keyboard → turn off Snip & Sketch*).
   document why a lint is allowed).
 - No `unsafe` in hotkey/clipboard paths unless wrapped + commented.
 - MSVC linker build succeeds on a clean checkout (CI matrix adds windows).
+
+## 11. Implementation status (2026-07-19)
+
+What shipped in the `features/core-loop` UM2 commit:
+
+- **`pixelens-capture/src/windows.rs`** (new): `GrabPipeline` `#[cfg(windows)]`
+  `imp` with the WinRT `GraphicsCapturePicker` + `Direct3D11` device + DXgi
+  frame-pool path, plus a `MockWindowsCaptureProvider` (used on non-Windows so
+  `cargo test` stays green on Linux). `CaptureBackend::Windows` wraps the mock
+  under `#[cfg(windows)]`.
+- **`pixelens-capture/src/lib.rs` / `pipeline.rs`**: `cfg` dispatch —
+  Windows builds pick the WinRT `imp` path; Unix keeps `slurp`/`grim`. Unix
+  imports (`GrimCapturer`, `SlurpSelector`, `which`) and `check_dependency`
+  are gated `#[cfg(unix)]`; the `RegionSelector`/`ScreenCapturer` traits stay
+  unconditional (the mock provider implements them).
+- **`pixelens-ipc/src/codec.rs`**: named-pipe transport
+  (`\\.\pipe\pixelens`) under `#[cfg(windows)]`, keeping the length-prefixed
+  JSON codec transport-agnostic.
+- **`pixelens-keyhook/src/windows.rs`** (new): `RegisterHotKey` loop bound to
+  `Win+Shift+S` (`MOD_WIN | MOD_SHIFT | VK_S`), dispatching to the shared
+  `fire_grab`. `TranslateMessage`/`UnregisterHotKey` results are `.ok()`'d to
+  satisfy must-use lints.
+- **`pixelens-notify/src/lib.rs`**: `arboard` (clipboard) + WinRT toast under
+  `#[cfg(windows)]`.
+- **Cargo.toml files**: `windows = "0.58"` with the `Graphics_Capture`,
+  `Graphics_DirectX_Direct3D11`, `Graphics_Imaging`, `Win32_Graphics_*`, and
+  `Win32_UI_WindowsAndMessaging` features added to the windows target.
+
+Verification actually run (not assumed):
+
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (Linux).
+- `cargo test --workspace` → green (mock Windows backend on Linux).
+- `cargo check --target x86_64-pc-windows-msvc` (all 4 UM2 crates) → exit 0,
+  **zero warnings**.
+- All `unsafe` blocks confined to `#[cfg(windows)] imp` modules.
+
+Outstanding (matches the original QA checklist §9 — deferred, not done):
+
+- **Native Windows run not yet performed** (CI is Linux-only; the VM has no
+  display server). The picker → capture → OCR → clipboard loop must be
+  confirmed end-to-end on a real Windows 10/11 host before calling UM2
+  shipping-complete. Latency target ≤1.8s to beat the Snipping Tool
+  perception.
+- Linker build (`cargo build --target x86_64-pc-windows-msvc`) not exercised
+  here — only `cargo check` (type-check, no link) is verifiable on Linux.
+- `cargo test --features=windows` CI matrix (§10.1) not added yet (no Windows
+  runner in this environment).

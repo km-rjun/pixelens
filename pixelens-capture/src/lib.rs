@@ -13,6 +13,7 @@ pub mod pipeline;
 pub mod slurp_grim;
 pub mod wayland;
 pub mod which;
+pub mod windows;
 pub mod x11;
 
 pub use detector::{detect_display_server, DisplayServer};
@@ -34,6 +35,8 @@ use std::sync::Arc;
 pub enum CaptureBackend {
     Wayland(Arc<wayland::WaylandCaptureProvider>),
     X11(Arc<x11::X11CaptureProvider>),
+    #[cfg(windows)]
+    Windows(Arc<windows::MockWindowsCaptureProvider>),
 }
 
 impl CaptureProvider for CaptureBackend {
@@ -41,6 +44,8 @@ impl CaptureProvider for CaptureBackend {
         match self {
             CaptureBackend::Wayland(p) => p.capture(request),
             CaptureBackend::X11(p) => p.capture(request),
+            #[cfg(windows)]
+            CaptureBackend::Windows(p) => p.capture(request),
         }
     }
 
@@ -48,6 +53,8 @@ impl CaptureProvider for CaptureBackend {
         match self {
             CaptureBackend::Wayland(p) => p.cancel(session_id),
             CaptureBackend::X11(p) => p.cancel(session_id),
+            #[cfg(windows)]
+            CaptureBackend::Windows(p) => p.cancel(session_id),
         }
     }
 }

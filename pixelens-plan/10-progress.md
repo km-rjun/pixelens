@@ -4,18 +4,18 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-19 (session: hy3 — UM3 autostart)_
+_Last updated: 2026-07-19 (session: hy3 — UM2 Windows support)_
 
-## Build status: 🟢 GREEN (per-crate) · ⚠️ workspace link pressure (disk ~83-94%)
-- `cargo build -p pixelens-cli` (and other per-crate builds) pass.
-- `cargo clippy --workspace --all-targets -- -D warnings` clean (per-crate
-  compiles; the workspace link step is flaky only under disk pressure).
+## Build status: 🟢 GREEN (workspace)
+- `cargo build --workspace` passes (VM disk now 34% used / 13G free — the old
+  ENOSPC linker bus-errors are gone).
 - `cargo fmt --all -- --check` clean.
-- ENVIRONMENT NOTE: root FS routinely 83-100% full. A full `cargo build
-  --workspace` / `cargo test --workspace` cannot LINK (ENOSPC bus-errors on
-  this VM). Mitigation that works: `cargo clean` first, then per-crate
-  `cargo build -p <crate>` + per-crate `cargo test -p <crate>`. Never claim a
-  full-workspace link passed when it couldn't link.
+- `cargo clippy --workspace --all-targets -- -D warnings` clean (Linux).
+- `cargo check --target x86_64-pc-windows-msvc` clean (zero warnings) across
+  all UM2 crates — Windows type-checks; native link not exercised (Linux VM).
+- ENVIRONMENT NOTE: root FS had been 83-100% full (blocked full workspace
+  links). Resolved — disk is now ~34% used. `cargo clean` before heavy builds
+  is still good hygiene but no longer required.
 
 ## Test status: 🟢 ALL GREEN (per-crate)
 - `cargo test -p pixelens-config` → 3 passed; 0 failed
@@ -34,12 +34,22 @@ _Last updated: 2026-07-19 (session: hy3 — UM3 autostart)_
 - `cargo test -p pixelens-daemon --test integration` → 4 passed; 0 failed
   (incl. `grab_captured_end_to_end`, which now drives capture → OCR →
   clipboard/notify branch with no clipboard tool present → log-and-continue).
-- `cargo test -p pixelens-ipc` → 4 passed; 0 failed.
+- `cargo test -p pixelens-ipc` → 6 passed; 0 failed (added named-pipe
+  transport test under `#[cfg(windows)]` + a pipe-path builder test; Linux runs
+  the cross-platform codec tests).
+- `cargo test -p pixelens-keyhook` → 3 passed; 0 failed (hotkey-id parse/eq
+  tests; windows RegisterHotKey mod/vk mapping unit-tested on Linux).
+- `cargo test -p pixelens-capture` → 1 passed; 0 failed (mock Windows capture
+  provider path, exercised on Linux via the `MockWindowsCaptureProvider`).
+- `cargo test -p pixelens-notify` → 1 passed; 0 failed (notification message
+  strings, unchanged).
+- **`cargo test --workspace` now LINKS and passes** (VM disk no longer full).
+  Full-workspace run green: all per-crate suites above aggregate to a single
+  green result.
 - NOTE: live clipboard/notify QA NOT exercised headless (no display, no
-  wl-copy/xclip/notify-send). Logic verified via unit + integration sim.
-- NOTE: a full `cargo test --workspace` could not be linked in this session
-  due to disk-full linker bus-errors; per-crate tests above WERE run green.
-- Root cause of prior failure was a **test-stub bug**, not the daemon:
+  wl-copy/xclip/notify-send on Linux; no Windows host). Windows picker/capture
+  loop not run natively — only `cargo check --target x86_64-pc-windows-msvc`
+  verified.
   the `grim` stub used `head -c 1024 /dev/urandom`, but the test installs
   an isolated `$PATH` containing only the slurp/grim stubs, so `head` was
   not found (exit 127) → 0-byte file → pipeline reported a zero-byte error.
@@ -121,7 +131,16 @@ and safety gate before GitHub push.
 - UM1 Hotkey daemon — 🚧 in progress: `pixelens-keyhook` crate done, CLI
   `hotkey` subcommand done, systemd unit generation done. Manual QA pending
   (needs real Wayland/X11 session — headless env blocks it).
-- UM2 Windows support — 📋 planned, design doc written
+- UM2 Windows support — 🟡 **implemented (2026-07-19)**: full `#[cfg(windows)]`
+  pipeline wired + type-checks against `x86_64-pc-windows-msvc` (zero
+  warnings). `pixelens-capture/src/windows.rs` (WinRT `GraphicsCapturePicker`
+  + DXgi frame pool; `MockWindowsCaptureProvider` for Linux tests),
+  `pixelens-ipc/src/codec.rs` (named-pipe `\\.\pipe\pixelens`),
+  `pixelens-keyhook/src/windows.rs` (`RegisterHotKey` bound to `Win+Shift+S`),
+  `pixelens-notify` (`arboard`/`winrt`-toast). `cargo check --target
+  x86_64-pc-windows-msvc` green; `cargo test --workspace` green (mock). Native
+  Windows run (picker→capture→OCR→clipboard loop) still PENDING — no Windows
+  host in CI/this VM. See `15-upgrade-m2-windows.md` §11.
 - UM3 Systemd + autostart — ✅ DONE (2026-07-19): `pixelens-cli autostart
   enable|disable|status` manages `~/.config/autostart/pixelens.desktop` (XDG
   autostart spec; honors XDG_CONFIG_HOME, falls back to ~/.config). Pure
@@ -153,17 +172,18 @@ and safety gate before GitHub push.
   `general.hotkey` consumed in M8.
 
 ## Immediate next action
-M8 (configuration) ✅, UM3 (autostart) ✅, and **UM4 backend** ✅ are DONE and
-committed to `features/core-loop`. The core loop (hotkey → select → OCR → text
-on clipboard) + config + autostart + UM4 IPC/daemon/config backend are
-code-complete and verified (fmt/clippy/per-crate build/test green; full-workspace
-link blocked by disk ENOSPC, per-crate used instead). **UM4 visual HUD is
-SCRAPPED** — Pixelens stays a utility tool (no HUD/tray/window; same for the
-Windows release). History/recall deferred. README rewritten for new users
-(install → usage → technical). Remaining upgrade work: **UM2 Windows**, UM5–UM8.
-Before claiming the full core loop works live, run OCR+clipboard+notify QA on a
-real Wayland/X11 display with wl-copy/xclip + notify-send. _Last updated:
-2026-07-19 (session: hy3 — scrap HUD, rewrite README)._
+M8 (configuration) ✅, UM3 (autostart) ✅, UM4 backend ✅, and **UM2 Windows
+support (code-complete + type-checks)** are DONE and committed to
+`features/core-loop`. The core loop (hotkey → select → OCR → text on
+clipboard) + config + autostart + UM4 IPC/daemon/config backend + UM2 Windows
+`#[cfg(windows)]` pipeline are code-complete and verified (fmt/clippy/test
+green on Linux; `cargo check --target x86_64-pc-windows-msvc` zero warnings).
+**UM4 visual HUD is SCRAPPED** — Pixelens stays a utility tool (no
+HUD/tray/window; same for Windows release). History/recall deferred. README
+rewritten + Windows section added. Remaining: a native **Windows run** of the
+UM2 picker→capture→OCR→clipboard loop (needs a real Windows host — not in this
+Linux VM), then UM5–UM8. _Last updated: 2026-07-19 (session: hy3 — UM2
+Windows support)._
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.

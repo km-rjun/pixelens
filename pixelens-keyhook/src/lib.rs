@@ -9,9 +9,18 @@
 //! Backend selection mirrors the daemon's display-server detection:
 //! Wayland → evdev event-device reader; X11 → x11rb root-window listener.
 
+// Unix-only backends (evdev/x11rb). Gated so the crate type-checks on
+// Windows, where those crates are unavailable.
+#[cfg(unix)]
 pub mod backend;
+#[cfg(unix)]
 pub mod wayland;
+#[cfg(unix)]
 pub mod x11;
+
+// Compiled on every target so the pure hotkey-mapping helpers and their
+// tests run on Linux too; only the Win32 `imp` submodule is windows-gated.
+pub mod windows;
 
 use std::collections::HashSet;
 
@@ -87,15 +96,16 @@ pub trait KeyhookListener {
     fn run(self: Box<Self>) -> anyhow::Result<()>;
 }
 
-/// Connect to the daemon socket and send `Command::Grab`. This is the exact
-/// same request the CLI sends, so the daemon treats a hotkey press
-/// identically to `pixelens grab`.
+/// Connect to the daemon transport (Unix socket on unix, the
+/// `\\.\pipe\pixelens` named pipe on Windows) and send `Command::Grab`.
+/// This is the exact same request the CLI sends, so the daemon treats a
+/// hotkey press identically to `pixelens grab`.
 ///
 /// Failures are logged, not propagated — a dead daemon or a failed grab must
 /// never crash the listener.
 pub fn fire_grab() {
-    use pixelens_ipc::{write_frame, Command, IpcRequest};
-    use tokio::net::UnixStream;
+    use pixelens_ipc::codec::{connect, write_frame};
+    use pixelens_ipc::{Command, IpcRequest};
     use uuid::Uuid;
 
     tracing::debug!("hotkey pressed -> sending Grab");
@@ -110,11 +120,10 @@ pub fn fire_grab() {
         }
     };
     rt.block_on(async {
-        let path = socket_path();
-        let mut stream = match UnixStream::connect(&path).await {
+        let mut stream = match connect().await {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!(error = %e, socket = %path.display(), "daemon not reachable");
+                tracing::warn!(error = %e, "daemon not reachable");
                 return;
             }
         };
@@ -129,25 +138,22 @@ pub fn fire_grab() {
     });
 }
 
-/// Resolve the daemon socket path. Mirrors `pixelens-cli/src/main.rs`.
-fn socket_path() -> std::path::PathBuf {
-    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return std::path::PathBuf::from(dir).join("pixelens.sock");
-        }
-    }
+/// Run the global hotkey listener.
+///
+/// Unix uses the display-server-aware backend (evdev/x11rb); Windows uses a
+/// `RegisterHotKey` message loop. The two paths share `fire_grab`.
+pub fn run(combo: KeyCombo) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
-        extern "C" {
-            fn getuid() -> u32;
-        }
-        // SAFETY: getuid is async-signal-safe and has no preconditions.
-        let uid = unsafe { getuid() };
-        std::path::PathBuf::from(format!("/tmp/pixelens-{uid}.sock"))
+        use pixelens_capture::detect_display_server;
+        let display = detect_display_server()
+            .map_err(|e| anyhow::anyhow!("display detection failed: {e}"))?;
+        let listener = backend::build(display, combo)?;
+        listener.run()
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        std::path::PathBuf::from("(no socket on non-unix)")
+        windows::run_keyhook_windows(combo)
     }
 }
 

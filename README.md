@@ -1,9 +1,9 @@
 # Pixelens
 
-Pixelens is a keyboard-first screen-text utility for Linux. Press a hotkey (or
-run a command), select a screen region, and the extracted **text is copied to
-your clipboard** — no menus, no cloud, no AI. Grab-to-clipboard in under two
-seconds.
+Pixelens is a keyboard-first screen-text utility for **Linux** and **Windows**.
+Press a hotkey (or run a command), select a screen region, and the extracted
+**text is copied to your clipboard** — no menus, no cloud, no AI.
+Grab-to-clipboard in under two seconds.
 
 Pixelens stays a *utility*: a fast hotkey-driven capture pipeline, not a GUI
 app. There is no tray, no main window, and no point-and-click interface. (A
@@ -55,6 +55,44 @@ This produces three binaries in `target/release/`:
 
 The daemon writes a default config to `~/.config/pixelens/config.toml` on first
 run if one does not exist.
+
+### Windows
+
+Pixelens on Windows ("UM2") uses the same architecture as Linux: a daemon, a
+CLI client, and a global hotkey listener — but the capture path is the WinRT
+**Graphics Capture Picker** (the same machinery the Snipping Tool / `Win+Shift+S`
+shell experience uses), which replaces `slurp`/`grim`. Clipboard and
+notifications use `arboard` / WinRT respectively.
+
+**Build from source** (requires the `x86_64-pc-windows-msvc` target and the
+Windows SDK):
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+git clone https://github.com/km-rjun/pixelens
+cd pixelens
+cargo build --release --target x86_64-pc-windows-msvc
+```
+
+This produces `target/x86_64-pc-windows-msvc/release/pixelensd.exe`,
+`pixelens.exe`, and `pixelens-keyhook.exe`.
+
+**Windows specifics:**
+
+- **Hotkey:** `Win+Shift+S` (the native Snip shortcut). Press it, pick a region
+  in the system capture picker, and the text is OCR'd and copied to the
+  clipboard with a toast.
+- **No `slurp`/`grim`/`tesseract`/`wl-copy`/`notify-send`** — all of those are
+  Linux-only. The Windows build links `tesseract` via the native path and uses
+  platform clipboard/notification APIs.
+- **IPC transport** is a named pipe (`\\.\pipe\pixelens`) instead of a Unix
+  socket.
+
+> The Windows code is `#[cfg(windows)]`-gated and type-checks against the
+> `x86_64-pc-windows-msvc` target, but it has **not yet been exercised on a real
+> Windows host** (the CI builds are Linux-only). Treat the Windows binary as
+> "compiles + wired" until a native run confirms the picker/capture loop
+> end-to-end.
 
 ---
 
@@ -161,12 +199,17 @@ key is a single letter/digit).
 **Shipped and working:**
 
 - Region capture (`slurp` + `grim`) on Wayland **and** X11.
-- Background daemon + CLI over a Unix socket.
+- Background daemon + CLI over a Unix socket (Linux) / named pipe (Windows).
 - Global hotkey via systemd user service (UM1), auto-start on login (UM3).
 - OCR via Tesseract → text copied to clipboard + desktop notification (M5/M7).
 - `pixelens config` CLI: `list` / `get` / `set` (M8).
 - Grab-backend IPC for one-shot preview override + display re-detect (UM4
   backend).
+- **Windows support (UM2):** the full `#[cfg(windows)]` pipeline is wired
+  (WinRT capture picker, `RegisterHotKey` listener, named-pipe IPC,
+  `arboard`/WinRT clipboard + notifications) and type-checks against
+  `x86_64-pc-windows-msvc`. A native Windows run to confirm the picker/capture
+  loop end-to-end is still pending.
 
 **Deliberately deferred (not bugs — scope decisions):**
 
@@ -174,7 +217,6 @@ key is a single letter/digit).
   is a utility, not a GUI app. Only minimal, essential grab affordances will be
   considered later if needed — and the same applies to the Windows release.
 - **History / recall of past grabs:** coming later, not in this build.
-- **Windows support (UM2):** planned, not yet started.
 - **`general.theme`:** parsed but unused until a UI exists.
 
 ---

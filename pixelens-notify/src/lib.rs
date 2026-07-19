@@ -124,6 +124,82 @@ impl Notifier for NotifySend {
     }
 }
 
+impl NotifySend {
+    /// Send an arbitrary message (used by the transport-agnostic
+    /// [`notify_success`]). Behaves like [`Notifier::send`] but with a
+    /// caller-supplied body.
+    pub fn send_message(&self, message: &str) -> Result<(), NotifyError> {
+        let status = Command::new("notify-send")
+            .arg("--app-name")
+            .arg("Pixelens")
+            .arg("Pixelens")
+            .arg(message)
+            .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    NotifyError::BackendUnavailable("notify-send not found on PATH".to_string())
+                } else {
+                    NotifyError::Io(e)
+                }
+            })?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(NotifyError::BackendUnavailable(format!(
+                "notify-send exited with status {status}"
+            )))
+        }
+    }
+}
+
+/// Windows native toast backend (winrt-notification).
+#[cfg(windows)]
+mod windows {
+    use crate::NotificationKind;
+
+    /// Pop a toast with the given summary/body. Failures are swallowed by the
+    /// caller-facing helpers — a failed notification must never abort a grab.
+    pub(crate) fn toast(summary: &str, body: &str) -> Result<(), crate::NotifyError> {
+        winrt_notification::Toast::new(winrt_notification::Toast::POWERSHELL_APP_ID)
+            .title(summary)
+            .text1(body)
+            .show()
+            .map_err(|e| crate::NotifyError::BackendUnavailable(e.to_string()))
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn notify_kind(kind: NotificationKind) {
+        let _ = toast("Pixelens", kind.message());
+    }
+}
+
+/// Transport-agnostic success notification. On unix it shells out to
+/// `notify-send`; on Windows it shows a winrt toast. Identical signature on
+/// both platforms so call sites need no cfg.
+pub fn notify_success(text: &str) {
+    #[cfg(unix)]
+    {
+        let _ = NotifySend::new().send_message(text);
+    }
+    #[cfg(windows)]
+    {
+        let _ = windows::toast("Pixelens", text);
+    }
+}
+
+/// Transport-agnostic "no text found" notification.
+pub fn notify_empty() {
+    #[cfg(unix)]
+    {
+        let _ = NotifySend::new().send(NotificationKind::NoTextFound);
+    }
+    #[cfg(windows)]
+    {
+        let _ = windows::toast("Pixelens", NotificationKind::NoTextFound.message());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

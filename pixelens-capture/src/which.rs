@@ -53,17 +53,26 @@ fn is_executable(p: &std::path::Path) -> bool {
     if !meta.is_file() {
         return false;
     }
-    // On Unix, check the owner-execute bit. We deliberately ignore
-    // group/other to keep the check fast and simple — `execvp` will
-    // surface the real permission error at spawn time.
-    use std::os::unix::fs::PermissionsExt;
-    meta.permissions().mode() & 0o100 != 0
+    #[cfg(unix)]
+    {
+        // On Unix, check the owner-execute bit. We deliberately ignore
+        // group/other to keep the check fast and simple — `execvp` will
+        // surface the real permission error at spawn time.
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o100 != 0
+    }
+    // On non-Unix (Windows) the only signal we get from metadata is the
+    // file's existence, which `is_file()` already established. Native
+    // capture does not go through $PATH binaries, so this is moot there.
+    #[cfg(not(unix))]
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn finds_existing_tool() {
         // /bin/sh is on every Linux box; it's the most portable choice.

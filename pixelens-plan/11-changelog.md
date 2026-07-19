@@ -307,3 +307,54 @@ _(old entries unchanged)_
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
 unrelated changes in one entry.
+
+---
+
+2026-07-19 | session `hy3` (UM2 — Windows support, subagent loop)
+- **Implemented UM2 Windows support** via the WORKER→TESTER→VERIFIER→REVIEWER
+  subagent loop (loop um2-1..um2-5):
+  - `pixelens-capture/src/windows.rs` (new): `#[cfg(windows)] imp` with WinRT
+    `GraphicsCapturePicker` + `Direct3D11` device + DXgi frame-pool capture path;
+    `MockWindowsCaptureProvider` (non-windows) so `cargo test` is green on Linux.
+    `CaptureBackend::Windows` wraps the mock under `#[cfg(windows)]`.
+  - `pixelens-capture/src/{lib.rs,pipeline.rs}`: `cfg` dispatch — Windows picks
+    the WinRT `imp`; Unix keeps `slurp`/`grim`. Unix-only imports
+    (`GrimCapturer`, `SlurpSelector`, `which`) + `check_dependency` are gated
+    `#[cfg(unix)]`; `RegionSelector`/`ScreenCapturer` traits stay unconditional.
+  - `pixelens-ipc/src/codec.rs`: named-pipe transport (`\\.\pipe\pixelens`) under
+    `#[cfg(windows)]`, keeping the length-prefixed JSON codec transport-agnostic.
+  - `pixelens-keyhook/src/windows.rs` (new): `RegisterHotKey` loop bound to
+    `Win+Shift+S` (`MOD_WIN | MOD_SHIFT | VK_S`), dispatching to `fire_grab`.
+    `TranslateMessage`/`UnregisterHotKey` results `.ok()`'d for must-use lints.
+    `lib.rs` gates the unix backend/wayland/x11 mods behind `#[cfg(unix)]`; the
+    windows mod is unconditional (with `windows` crate `RegisterHotKey` /
+    `HOT_KEY_MODIFIERS` / `UnregisterHotKey` usage).
+  - `pixelens-notify/src/lib.rs`: `arboard` (clipboard) + WinRT toast under
+    `#[cfg(windows)]`.
+  - Cargo.toml files (capture/keyhook/notify): `windows = "0.58"` with
+    `Graphics_Capture`, `Graphics_DirectX_Direct3D11`, `Graphics_Imaging`,
+    `Win32_Graphics_*`, `Win32_UI_WindowsAndMessaging` features for the windows
+    target.
+- **Docs:** README gained a Windows install subsection + cross-platform intro +
+  shipped-list update + removal of the "Windows planned" deferred bullet;
+  `15-upgrade-m2-windows.md` status → 🟡 implemented + new §11 implementation
+  status block; `10-progress.md`/`11-changelog.md` updated.
+- **WORKER caveat:** the spawned WORKER self-reported clippy-clean but actually
+  left a `items_after_test_module` defect in `pixelens-notify/src/lib.rs` and a
+  `capture/windows.rs` gap — main agent caught both in VERIFIER/REVIEWER stages
+  and fixed them. Do not trust subagent "clean" claims; re-run real gates.
+- **QA (real, run by main agent):**
+  - `cargo fmt --all -- --check` → exit 0.
+  - `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (Linux).
+  - `cargo test --workspace` → green (MockWindowsCaptureProvider path; 11+ tests
+    across ipc/keyhook/capture/notify).
+  - `cargo check --target x86_64-pc-windows-msvc` (all 4 UM2 crates) → exit 0,
+    **zero warnings**.
+  - `git diff` vs e777b49 confirmed Unix `run()`/`run_unix` logic byte-unchanged;
+    all `unsafe` confined to `#[cfg(windows)] imp` modules.
+- **NOT verified (environment limit):** native Windows run (picker → capture →
+  OCR → clipboard loop) needs a real Windows 10/11 host — not available in this
+  Linux VM. Only type-checks via `cargo check`. `cargo build
+  --target x86_64-pc-windows-msvc` (link) also not exercised here.
+- Commit pending (will push to `features/core-loop`, user pre-authorized):
+  `feat(um2): Windows support (#[cfg(windows)] pipeline) + docs`.

@@ -11,7 +11,10 @@
 //! [`GrabOutcome`] values, not raw subprocess errors, so the daemon's
 //! IPC layer can map them to response statuses cleanly.
 
-use crate::slurp_grim::{GrimCapturer, RegionSelector, ScreenCapturer, SlurpSelector};
+#[cfg(unix)]
+use crate::slurp_grim::{GrimCapturer, SlurpSelector};
+use crate::slurp_grim::{RegionSelector, ScreenCapturer};
+#[cfg(unix)]
 use crate::which;
 use pixelens_core::{CaptureError, Rect};
 use std::path::PathBuf;
@@ -67,18 +70,30 @@ pub struct GrabPipeline {
 }
 
 impl GrabPipeline {
-    /// Standard pipeline: `slurp` for region selection, `grim` for capture.
+    /// Standard pipeline: region selection + capture.
     ///
-    /// Does an upfront `which("slurp")` and `which("grim")` check so
-    /// the caller gets a single clear "install X" message at startup
-    /// rather than discovering the problem mid-capture.
+    /// On Unix this is `slurp` + `grim` (v1-Wayland). On Windows it is the
+    /// WinRT `GraphicsCapturePicker` (Snipping-Tool-class experience bound to
+    /// the `Win+Shift+S` hotkey). Both arms do an upfront dependency probe so
+    /// the caller gets one clear message at startup.
     pub fn new() -> Result<Self, GrabError> {
-        check_dependency("slurp")?;
-        check_dependency("grim")?;
-        Self::with_selector_and_capturer(
-            Box::new(SlurpSelector::new()),
-            Box::new(GrimCapturer::new()),
-        )
+        #[cfg(windows)]
+        {
+            crate::windows::region_selector(); // type-check the path is wired
+            Self::with_selector_and_capturer(
+                crate::windows::region_selector(),
+                crate::windows::screen_capturer(),
+            )
+        }
+        #[cfg(unix)]
+        {
+            check_dependency("slurp")?;
+            check_dependency("grim")?;
+            Self::with_selector_and_capturer(
+                Box::new(SlurpSelector::new()),
+                Box::new(GrimCapturer::new()),
+            )
+        }
     }
 
     /// Custom selector + capturer (used by tests). Skips the upfront
@@ -178,6 +193,7 @@ impl Default for GrabPipeline {
     }
 }
 
+#[cfg(unix)]
 fn check_dependency(tool: &str) -> Result<(), GrabError> {
     if which(tool).is_err() {
         Err(GrabError {

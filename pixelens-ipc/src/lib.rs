@@ -15,8 +15,34 @@
 pub mod codec;
 pub mod protocol;
 
+/// Resolve the daemon socket path. On Unix this mirrors the CLI/keyhook
+/// resolution (XDG_RUNTIME_DIR with a uid fallback). On Windows the IPC
+/// transport is a named pipe, so this is unused — `codec::windows_pipe_path`
+/// is the Windows endpoint instead.
+pub fn socket_path() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+            if !dir.is_empty() {
+                return std::path::PathBuf::from(dir).join("pixelens.sock");
+            }
+        }
+        extern "C" {
+            fn getuid() -> u32;
+        }
+        // SAFETY: getuid is async-signal-safe and has no preconditions.
+        let uid = unsafe { getuid() };
+        std::path::PathBuf::from(format!("/tmp/pixelens-{uid}.sock"))
+    }
+    #[cfg(not(unix))]
+    {
+        std::path::PathBuf::from("(no unix socket)")
+    }
+}
+
 pub use codec::{
-    read_frame, read_response, write_frame, write_response, FrameError, MAX_FRAME_SIZE,
+    bind, connect, read_frame, read_response, windows_pipe_path, write_frame, write_response,
+    FrameError, IpcStream, MAX_FRAME_SIZE,
 };
 pub use protocol::{
     Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest, IpcResponse, RequestId,

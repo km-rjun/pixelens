@@ -1,7 +1,5 @@
 //! `pixelens-keyhook` binary entry point.
 
-use pixelens_capture::detect_display_server;
-use pixelens_keyhook::backend;
 use pixelens_keyhook::KeyCombo;
 
 fn main() -> anyhow::Result<()> {
@@ -36,10 +34,6 @@ fn main() -> anyhow::Result<()> {
     let combo = KeyCombo::parse(&combo_str)
         .map_err(|e| anyhow::anyhow!("invalid hotkey combo '{combo_str}': {e}"))?;
 
-    let display = detect_display_server()
-        .map_err(|e| anyhow::anyhow!("display server detection failed: {e}"))?;
-
-    let listener = backend::build(display, combo)?;
-    listener.run()?;
+    pixelens_keyhook::run(combo)?;
     Ok(())
 }
