@@ -17,6 +17,20 @@ pub enum Command {
     ConfigGet,
     ConfigSet,
     Cancel,
+    /// UM4: re-run display/output detection before the next grab.
+    Redetect,
+    /// UM4: one-shot preview override for the *next* grab only. `payload`
+    /// carries the boolean; subsequent grabs fall back to config.
+    SetPreview,
+}
+
+/// Payload for [`Command::SetPreview`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetPreviewPayload {
+    /// When `true`, force a capture preview for the next grab; when
+    /// `false`, suppress it. After one grab the override is cleared and
+    /// the daemon reverts to `capture.show_preview` from config.
+    pub preview: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,5 +203,26 @@ mod tests {
         let resp = IpcResponse::cancelled("req-1".to_string());
         assert_eq!(resp.status, ResponseStatus::Cancelled);
         assert_eq!(resp.payload["reason"], "cancelled");
+    }
+
+    #[test]
+    fn redetect_command_serializes_lowercase() {
+        let json = serde_json::to_string(&Command::Redetect).unwrap();
+        assert_eq!(json, "\"redetect\"");
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, Command::Redetect);
+    }
+
+    #[test]
+    fn set_preview_command_and_payload_round_trip() {
+        let json = serde_json::to_string(&Command::SetPreview).unwrap();
+        assert_eq!(json, "\"setpreview\"");
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, Command::SetPreview);
+
+        let payload = SetPreviewPayload { preview: true };
+        let pj = serde_json::to_string(&payload).unwrap();
+        let pback: SetPreviewPayload = serde_json::from_str(&pj).unwrap();
+        assert_eq!(pback, payload);
     }
 }

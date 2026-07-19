@@ -20,5 +20,5 @@ pub use codec::{
 };
 pub use protocol::{
     Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest, IpcResponse, RequestId,
-    ResponseStatus, CANCEL_COMMAND,
+    ResponseStatus, SetPreviewPayload, CANCEL_COMMAND,
 };

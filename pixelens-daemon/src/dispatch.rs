@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use pixelens_capture::GrabOutcome;
-use pixelens_ipc::{GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus};
+use pixelens_ipc::{
+    GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus, SetPreviewPayload,
+};
 use pixelens_notify::{NotificationKind, Notifier, NotifySend};
 
 use crate::clipboard::copy_text;
@@ -37,6 +39,8 @@ impl Dispatcher {
             Command::ConfigGet => self.handle_not_implemented(&request, "config get"),
             Command::ConfigSet => self.handle_not_implemented(&request, "config set"),
             Command::Cancel => self.handle_not_implemented(&request, "cancel"),
+            Command::Redetect => self.handle_redetect(&request),
+            Command::SetPreview => self.handle_set_preview(&request),
         }
     }
 
@@ -47,6 +51,23 @@ impl Dispatcher {
                 "capture pipeline not initialised: install slurp and grim, then restart the daemon",
             );
         };
+
+        // UM4: the effective preview flag is the one-shot override (if
+        // set for *this* grab) falling back to `capture.show_preview`.
+        // We consume the override so the next grab reverts to config.
+        let effective_preview = self.state.preview_for_next_grab();
+        let override_was_set = self.state.take_preview_override().is_some();
+        if override_was_set {
+            tracing::info!(
+                effective_preview,
+                "UM4 one-shot preview override applied for this grab"
+            );
+        } else {
+            tracing::debug!(
+                effective_preview,
+                "preview resolved from config (no one-shot override)"
+            );
+        }
 
         // Run the pipeline on a blocking thread: slurp / grim do real
         // I/O and may block for several seconds while the overlay is
@@ -169,6 +190,42 @@ impl Dispatcher {
             format!("'{what}' is not yet implemented in this build"),
         )
         .with_status(ResponseStatus::Error)
+    }
+
+    /// UM4: request a re-detect of display outputs before the next grab.
+    /// The flag is consumed by the next grab; we return ok immediately so
+    /// the CLI isn't blocked on detection work.
+    fn handle_redetect(&self, request: &IpcRequest) -> IpcResponse {
+        self.state.request_redetect();
+        tracing::info!("redetect requested; outputs will be re-queried on next grab");
+        let payload = serde_json::json!({ "redetect": true });
+        IpcResponse::ok(request.request_id.clone(), payload)
+            .unwrap_or_else(|e| IpcResponse::error(request.request_id.clone(), e.to_string()))
+    }
+
+    /// UM4: set a one-shot preview override for the *next* grab only.
+    /// The override is consumed by `handle_grab` and reverts to config
+    /// afterwards — so a single `setpreview true` does not leave the
+    /// daemon permanently in preview mode.
+    fn handle_set_preview(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: SetPreviewPayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid setpreview payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+        self.state.set_preview_override(payload.preview);
+        tracing::info!(
+            preview = payload.preview,
+            "UM4 one-shot preview override set for next grab"
+        );
+        let payload = serde_json::json!({ "preview": payload.preview, "one_shot": true });
+        IpcResponse::ok(request.request_id.clone(), payload)
+            .unwrap_or_else(|e| IpcResponse::error(request.request_id.clone(), e.to_string()))
     }
 }
 

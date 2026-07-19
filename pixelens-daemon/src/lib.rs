@@ -55,6 +55,15 @@ pub async fn run() -> anyhow::Result<()> {
         tracing::debug!("capture.show_preview = false; fast path (no preview)");
     }
 
+    // UM4: surface the GUI feature flags so `gui.*` keys are observably
+    // consumed (the visual HUD crate reads them; `hud_enabled` is the
+    // master switch that gates the hotkey `Space` chord).
+    tracing::info!(
+        hud_enabled = config.gui.hud_enabled,
+        hud_timeout_ms = config.gui.hud_timeout_ms,
+        "gui config resolved"
+    );
+
     // Display-server detection is the first gate per PRD §"Display
     // Server Detection". Failures here are fatal.
     let display = pixelens_capture::detect_display_server()
@@ -105,7 +114,7 @@ pub async fn run() -> anyhow::Result<()> {
         }
     };
 
-    let state = Arc::new(state::DaemonState::new(display, pipeline, ocr));
+    let state = Arc::new(state::DaemonState::new(display, pipeline, ocr, config));
     let dispatcher = Arc::new(dispatch::Dispatcher::new(state));
 
     ipc::serve(listener, dispatcher).await;
