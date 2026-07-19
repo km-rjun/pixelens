@@ -6,6 +6,7 @@ members = [
     "pixelens-config",
     "pixelens-ocr",
     "pixelens-capture",
+    "pixelens-portal",
     "pixelens-overlay",
     "pixelens-notify",
     "pixelens-daemon",

@@ -34,7 +34,6 @@ pub fn screen_capturer() -> Box<dyn crate::slurp_grim::ScreenCapturer> {
 
 #[cfg(windows)]
 mod imp {
-    use super::*;
     use pixelens_core::{CaptureError, CaptureResult, Rect};
     use std::path::Path;
     use windows::core::Interface;
