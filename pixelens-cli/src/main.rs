@@ -34,6 +34,7 @@ Commands:
   status       Show daemon status
   stop         Stop daemon
   hotkey       Manage global hotkey (enable|disable|status)
+  autostart    Manage XDG autostart .desktop (enable|disable|status)
   config       Manage configuration
 
   version      Show version
@@ -109,6 +110,13 @@ async fn real_main() -> ExitCode {
             }
         },
         Some("hotkey") => match run_hotkey(args.get(1).map(String::as_str)).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(1)
+            }
+        },
+        Some("autostart") => match run_autostart(args.get(1).map(String::as_str)) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -286,6 +294,88 @@ async fn run_hotkey(sub: Option<&str>) -> Result<(), Box<dyn std::error::Error>>
     }
 }
 
+/// XDG autostart directory (`~/.config/autostart`), honouring
+/// `XDG_CONFIG_HOME`. Falls back to `$HOME/.config/autostart`.
+fn autostart_dir() -> std::path::PathBuf {
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return std::path::PathBuf::from(xdg).join("autostart");
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::PathBuf::from(home).join(".config/autostart");
+    }
+    std::path::PathBuf::from(".config/autostart")
+}
+
+/// Path of the generated autostart `.desktop` file.
+fn autostart_desktop_path() -> std::path::PathBuf {
+    autostart_dir().join("pixelens.desktop")
+}
+
+/// Build the XDG autostart `.desktop` file content for `pixelens-keyhook`.
+fn autostart_desktop_content(bin: &std::path::Path) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=Pixelens\nExec={bin}\nComment=Start Pixelens global hotkey listener on login\nX-GNOME-Autostart-enabled=true\n",
+        bin = bin.display()
+    )
+}
+
+/// Pure helper: write the autostart `.desktop` into `dir` using `bin`.
+/// Returns the written file path. Creates the parent directory.
+fn write_autostart_desktop(dir: &std::path::Path, bin: &std::path::Path) -> std::path::PathBuf {
+    std::fs::create_dir_all(dir).ok();
+    let path = dir.join("pixelens.desktop");
+    std::fs::write(&path, autostart_desktop_content(bin)).ok();
+    path
+}
+
+/// Pure helper: remove the autostart `.desktop` from `dir` if present.
+/// Ignores a missing file (idempotent).
+fn remove_autostart_desktop(dir: &std::path::Path) {
+    let path = dir.join("pixelens.desktop");
+    if path.exists() {
+        std::fs::remove_file(&path).ok();
+    }
+}
+
+/// `pixelens autostart <enable|disable|status>` — XDG autostart
+/// complement to the UM1 systemd `--user` hotkey service. The `.desktop`
+/// file (not systemd) is the mechanism that survives login on DEs that
+/// honour XDG autostart; no `systemctl` is invoked here.
+fn run_autostart(sub: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    match sub {
+        Some("enable") => {
+            let bin = keyhook_binary().ok_or("pixelens-keyhook binary not found on PATH")?;
+            let dir = autostart_dir();
+            let path = write_autostart_desktop(&dir, &bin);
+            println!("autostart enabled: {}", path.display());
+            Ok(())
+        }
+        Some("disable") => {
+            remove_autostart_desktop(&autostart_dir());
+            println!("autostart disabled");
+            Ok(())
+        }
+        Some("status") => {
+            let path = autostart_desktop_path();
+            if path.exists() {
+                println!("autostart: enabled ({})", path.display());
+            } else {
+                println!("autostart: disabled");
+            }
+            Ok(())
+        }
+        other => {
+            eprintln!("usage: pixelens autostart <enable|disable|status>");
+            if let Some(cmd) = other {
+                return Err(format!("unknown autostart subcommand '{cmd}'").into());
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Resolve the daemon socket path. Mirrors the daemon's `socket_path()`
 /// exactly — if the daemon can find the socket, so can the CLI.
 fn socket_path() -> Result<PathBuf, CliError> {
@@ -438,6 +528,31 @@ fn run_config(
             set_value(&mut cfg, key, value)?;
             save_config(&cfg)?;
             println!("set {key} = {value}");
+            // UM3: `general.autostart` has a real side effect — keep the
+            // XDG autostart `.desktop` in sync with the config key. This is
+            // best-effort: a write failure warns but does not fail `set`.
+            if key == "general.autostart" {
+                match value.trim().to_ascii_lowercase().as_str() {
+                    "true" | "1" | "yes" | "on" => {
+                        if let Some(bin) = keyhook_binary() {
+                            let dir = autostart_dir();
+                            write_autostart_desktop(&dir, &bin);
+                            println!(
+                                "wrote autostart entry: {}",
+                                autostart_desktop_path().display()
+                            );
+                        } else {
+                            eprintln!(
+                                "warning: pixelens-keyhook not found on PATH; autostart not written"
+                            );
+                        }
+                    }
+                    _ => {
+                        remove_autostart_desktop(&autostart_dir());
+                        println!("removed autostart entry (if present)");
+                    }
+                }
+            }
             Ok(())
         }
         Some(other) => {
@@ -447,5 +562,53 @@ fn run_config(
             eprintln!("usage: pixelens config <list|get <key>|set <key> <value>>");
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn autostart_desktop_round_trip() {
+        // Isolate from the real $HOME / XDG_CONFIG_HOME.
+        let tmp = std::env::temp_dir().join(format!(
+            "pixelens-autostart-test-{}-{}",
+            std::process::id(),
+            "roundtrip"
+        ));
+        let dir = tmp.join("config").join("autostart");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let bin = PathBuf::from("/usr/bin/pixelens-keyhook");
+
+        // Initially nothing is written.
+        assert!(!dir.join("pixelens.desktop").exists());
+
+        // enable -> desktop file appears with the right content.
+        let path = write_autostart_desktop(&dir, &bin);
+        assert!(path.exists(), "desktop file should exist after write");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("[Desktop Entry]"));
+        assert!(content.contains("Type=Application"));
+        assert!(content.contains("Name=Pixelens"));
+        assert!(content.contains("Exec=/usr/bin/pixelens-keyhook"));
+        assert!(content.contains("X-GNOME-Autostart-enabled=true"));
+
+        // disable -> desktop file removed (idempotent even if absent).
+        remove_autostart_desktop(&dir);
+        assert!(!dir.join("pixelens.desktop").exists());
+        remove_autostart_desktop(&dir); // second call must not panic
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn autostart_dir_honors_xdg_config_home() {
+        std::env::set_var("XDG_CONFIG_HOME", "/tmp/xdg-test");
+        std::env::remove_var("HOME");
+        let dir = autostart_dir();
+        assert_eq!(dir, PathBuf::from("/tmp/xdg-test/autostart"));
+        std::env::remove_var("XDG_CONFIG_HOME");
     }
 }
