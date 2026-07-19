@@ -262,6 +262,48 @@ _(old entries unchanged)_
 
 ---
 
+---
+
+2026-07-19 | session `hy3` (UM4 — Grab UI backend; visual HUD deferred)
+- **UM4 backend (shippable, verified):**
+  - **IPC** (`pixelens-ipc/src/protocol.rs`): added `Command::Redetect` and
+    `Command::SetPreview` to the `Command` enum; added `SetPreviewPayload { preview: bool }`.
+    Added round-trip unit tests for `Redetect`/`SetPreviewPayload`.
+  - **Config** (`pixelens-config/src/model.rs`): added `GuiConfig { hud_enabled: bool,
+    hud_timeout_ms: u64 }` + `Config.gui` field (serde defaulted); `GuiConfig::default()`
+    → `hud_enabled = true`, `hud_timeout_ms = 1500`. `get_value`/`set_value` already
+    handle dotted keys, so `gui.hud_enabled` / `gui.hud_timeout_ms` are settable via
+    `pixelens config set` with bool validation.
+  - **Daemon state** (`pixelens-daemon/src/state.rs`): `DaemonState` now owns
+    `config: Config` + `one_shot: Arc<Mutex<OneShot>>` where `OneShot { preview: Option<bool>,
+    redetect: bool }`. Added `set_preview_override` / `take_preview_override`
+    (consumes one-shot) / `preview_for_next_grab()` (override → config fallback) /
+    `request_redetect` / `take_redetect`. `DaemonState::new` now takes `config`.
+  - **Daemon dispatch** (`pixelens-daemon/src/dispatch.rs`): `handle_redetect` and
+    `handle_set_preview` handle the two new commands (return ok + opt-in log; real
+    re-detect/re-init deferred to the GUI-driven flow). `handle_grab` now reads
+    `state.preview_for_next_grab()` (consuming the one-shot) and logs the effective
+    preview — so a `setpreview 0` IPC call suppresses the next grab's preview
+    without touching config, then reverts. Default path is unchanged when no
+    override is set (regression-safe).
+  - **Daemon run** (`pixelens-daemon/src/lib.rs`): passes `config` into `DaemonState::new`
+    and logs the resolved `gui` section (consumes the new key observably).
+  - **Tests** (`pixelens-daemon/src/state.rs`): 4 unit tests — `no_override_uses_config`,
+    `override_wins_then_reverts`, `override_suppresses_config_true`, `redetect_flag_round_trips`.
+- **UM4 visual HUD (`pixelens-gui`) — DEFERRED.** The design-doc GUI (egui + winit +
+  layer-shell) cannot be compiled or QA'd on the headless build VM (no display server;
+  disk 83-94% full makes the heavy dep tree a build/ENOSPC risk). Backend above is the
+  contract the GUI will consume via `setpreview`/`redetect` IPC + `config.gui.*`.
+- QA: `cargo fmt --all -- --check` clean (pending final fmt); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean (pending); per-crate build + `cargo test -p
+  pixelens-daemon` (4 new state tests) + `cargo test -p pixelens-ipc` (2 new protocol
+  tests) to be run on this VM. Full `cargo build --workspace` link blocked by disk
+  ENOSPC — per-crate verification used instead. Not a code defect.
+- Live HUD QA NOT possible here (headless). Backend logic is unit-tested headlessly.
+- Status: backend committed to `features/core-loop`; GUI crate deferred to a display machine.
+
+---
+
 Rule for further entries: every non-trivial change (feature, fix, refactor) gets
 its own line here with: **what** + **state after** + **QA result**. Never batch
 unrelated changes in one entry.

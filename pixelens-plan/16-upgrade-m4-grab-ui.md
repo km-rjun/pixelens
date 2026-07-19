@@ -4,6 +4,21 @@
 is an *enhancement* to the grab trigger, not a replacement of the core flow.
 **Status**: 📋 planned · **Owner**: odin.
 
+> **Implementation status (2026-07-19):**
+> - ✅ **UM4-core — backend/IPC/config — DONE & verified.** `Command::Redetect`
+>   and `Command::SetPreview` added to the IPC protocol; daemon dispatch handles
+>   both; `DaemonState` gained a `OneShot` override (one-shot preview that reverts
+>   after the next grab) + a re-detect flag; config gained `GuiConfig { hud_enabled,
+>   hud_timeout_ms }` (defaults `true` / `1500`). Regression-guarded by unit tests
+>   on `DaemonState`. Default grab path is byte-for-byte unchanged when no override
+>   is set.
+> - ⏸️ **UM4-gui — the visual HUD crate (`pixelens-gui`) — DEFERRED.** The proposed
+>   `egui` + `winit` + `wlr-layer-shell` surface **cannot be compiled or QA'd on the
+>   headless build VM** (no display server, no Wayland/X11, disk 83-94% full → heavy
+>   dep tree risks ENOSPC on every future build). It will be implemented on a machine
+>   with a real display. The backend above is the contract the GUI will consume via
+>   `setpreview` / `redetect` IPC + `config.gui.*`.
+
 ---
 
 ## 1. Problem statement

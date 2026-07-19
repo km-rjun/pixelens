@@ -101,6 +101,7 @@ _Last updated: 2026-07-19 (session: hy3 — UM3 autostart)_
 - Upgrade M2: Windows support — replaces Snipping Tool, same 2s flow
 - Upgrade M3: Systemd + autostart integration
 - Upgrade M4: Grab UI / Actions popup — minimal HUD, no menus
+  (_backend done 2026-07-19; visual HUD crate deferred — see tracking below_)
 - Upgrade M5: Portal-native capture speedup
 - Upgrade M6: Multi-display smart selection
 - Upgrade M7: On-demand vs continuous mode
@@ -129,18 +130,36 @@ and safety gate before GitHub push.
   now keeps the .desktop in sync (best-effort, non-fatal). Complements UM1's
   systemd --user service. Manual QA of actual desktop autostart pending
   (needs a real session — headless blocks it).
-- Config keys `autostart` / `theme`: `autostart` IS now consumed (UM3). `theme`
-  still parsed but not read by the daemon (UI work). `show_preview` +
-  `general.hotkey` consumed in M8.
+- UM4 Grab UI — 🚧 backend DONE (2026-07-19), **visual HUD deferred**:
+  - **Backend (shippable now, verified):** IPC gained `Command::Redetect` +
+    `Command::SetPreview` (with `SetPreviewPayload`); daemon dispatch handles
+    both; `DaemonState` gained an `Arc<Mutex<OneShot>>` holding a one-shot
+    preview override (consumed by `handle_grab`, reverts to config afterward)
+    + a re-detect flag; config gained `GuiConfig { hud_enabled, hud_timeout_ms }`
+    (defaults `true` / `1500`). `DaemonState::preview_for_next_grab()` resolves
+    override→config. 4 unit tests guard the override/revert + redetect flag.
+    Default grab path is unchanged when no override is set (regression-safe).
+  - **Visual HUD crate (`pixelens-gui`, egui + layer-shell): DEFERRED.** Cannot
+    be compiled or QA'd on the headless build VM (no display, disk 83-94% full
+    → heavy dep tree risks ENOSPC). Implement on a machine with a real display;
+    it will consume `setpreview` / `redetect` IPC + `config.gui.*`. See
+    `16-upgrade-m4-grab-ui.md` status block.
+- Config keys `autostart` / `theme` / `gui.*`: `autostart` IS consumed (UM3).
+  `gui.hud_enabled` + `gui.hud_timeout_ms` are now parsed/validated (defaults
+  true/1500) but only *used* by the deferred HUD crate. `theme` still parsed but
+  not read by the daemon (UI work). `show_preview` + `general.hotkey` consumed
+  in M8; `gui.*` consumed once UM4-gui lands.
 
 ## Immediate next action
-M8 (configuration) ✅ and UM3 (autostart) ✅ are DONE and committed to
-`features/core-loop`. Core loop + config + autostart are code-complete and
-verified (fmt/clippy/per-crate build/test green; full-workspace link blocked by
-disk ENOSPC, per-crate used instead). Remaining upgrade work: **UM2 Windows**,
-**UM4 Grab UI**, UM5–UM8. Before claiming the full core loop works live, run
-OCR+clipboard+notify QA on a real Wayland/X11 display with wl-copy/xclip +
-notify-send. _Last updated: 2026-07-19 (session: hy3 — UM3 autostart)._
+M8 (configuration) ✅, UM3 (autostart) ✅, and **UM4 backend** ✅ are DONE and
+committed to `features/core-loop`. Core loop + config + autostart + the UM4
+IPC/daemon/config backend are code-complete and verified (fmt/clippy/per-crate
+build/test green; full-workspace link blocked by disk ENOSPC, per-crate used
+instead). **UM4 visual HUD crate is deferred** to a display machine. Remaining
+upgrade work: **UM2 Windows**, **UM4-gui (visual HUD)**, UM5–UM8. Before
+claiming the full core loop works live, run OCR+clipboard+notify QA on a real
+Wayland/X11 display with wl-copy/xclip + notify-send. _Last updated: 2026-07-19
+(session: hy3 — UM4 backend)._
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.
