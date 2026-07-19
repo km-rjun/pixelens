@@ -12,12 +12,13 @@ is an *enhancement* to the grab trigger, not a replacement of the core flow.
 >   hud_timeout_ms }` (defaults `true` / `1500`). Regression-guarded by unit tests
 >   on `DaemonState`. Default grab path is byte-for-byte unchanged when no override
 >   is set.
-> - ⏸️ **UM4-gui — the visual HUD crate (`pixelens-gui`) — DEFERRED.** The proposed
->   `egui` + `winit` + `wlr-layer-shell` surface **cannot be compiled or QA'd on the
->   headless build VM** (no display server, no Wayland/X11, disk 83-94% full → heavy
->   dep tree risks ENOSPC on every future build). It will be implemented on a machine
->   with a real display. The backend above is the contract the GUI will consume via
->   `setpreview` / `redetect` IPC + `config.gui.*`.
+> - ❌ **UM4-gui — the visual HUD crate (`pixelens-gui`) — SCRAPPED (2026-07-19).**
+>   Per project direction, Pixelens stays a *utility tool*: no visual HUD, no
+>   tray, no main window. The `pixelens-gui` crate described below will **not** be
+>   built. The same applies to the Windows release (gui-light) and to a history/
+>   recall feature (deferred). Only minimal, essential grab affordances may be
+>   reconsidered later if the user asks. The UM4-core backend above remains as the
+>   stable contract should a future minimal HUD ever be wanted.
 
 ---
 

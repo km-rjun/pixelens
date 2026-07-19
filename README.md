@@ -1,31 +1,38 @@
 # Pixelens
 
-Pixelens is a Linux visual text-extraction utility. You press a hotkey (or run a
-command), select a screen region with the cursor, and the grabbed region is handled
-by a background daemon. **Current build:** the daemon captures the selected region to
-a screenshot file and reports its path. OCR (turning the screenshot into text) and
-copying that text to the clipboard are **not yet wired in** — they are the next
-milestones. Everything below documents what the code actually does today.
+Pixelens is a keyboard-first screen-text utility for Linux. Press a hotkey (or
+run a command), select a screen region, and the extracted **text is copied to
+your clipboard** — no menus, no cloud, no AI. Grab-to-clipboard in under two
+seconds.
 
-## What works today
+Pixelens stays a *utility*: a fast hotkey-driven capture pipeline, not a GUI
+app. There is no tray, no main window, and no point-and-click interface. (A
+visual HUD overlay was considered and deliberately deferred — see
+[Status](#status--roadmap).)
 
-| Piece | Status |
-|-------|--------|
-| Region capture (`slurp` + `grim`) | ✅ working |
-| Background daemon + CLI over a Unix socket | ✅ working |
-| Global hotkey (systemd user service) | ✅ working (Wayland + X11) |
-| OCR via Tesseract | ❌ NOT YET (M5) |
-| Copy extracted text to clipboard | ❌ NOT YET (M7) |
-| `pixelens config` CLI subcommand | ❌ stub (edit the TOML file directly) |
-| `show_preview` / `autostart` / `theme` config keys | ⚠️ parsed, not yet consumed by the daemon |
+---
 
-So `pixelens grab` today **captures a screenshot of the selected region** and prints
-the saved file path — it does not yet return OCR text. This README is kept honest to
-the code; features marked NOT YET are planned, not present.
+## Install
 
-## Build from source
+### Prerequisites
 
-Requires the Rust toolchain (edition 2021).
+- **Rust** (edition 2021) to build from source.
+- A **Wayland or X11** session.
+- Runtime capture/OCR tools on `$PATH` (see table).
+
+| Tool | Purpose | Debian/Ubuntu | Arch | Fedora |
+|------|---------|---------------|------|--------|
+| `slurp` | Region selection | `sudo apt install slurp` | `sudo pacman -S slurp` | `sudo dnf install slurp` |
+| `grim` | Screen capture | `sudo apt install grim` | `sudo pacman -S grim` | `sudo dnf install grim` |
+| `tesseract` | OCR (text extraction) | `sudo apt install tesseract-ocr` | `sudo pacman -S tesseract` | `sudo dnf install tesseract` |
+| `wl-copy` / `xclip` | Clipboard write | `sudo apt install wl-clipboard` / `sudo apt install xclip` | `sudo pacman -S wl-clipboard` / `xclip` | `sudo dnf install wl-clipboard` / `xclip` |
+| `notify-send` | Desktop notification | `sudo apt install libnotify-bin` | `sudo pacman -S libnotify` | `sudo dnf install libnotify` |
+
+> Clipboard + notify tools are auto-detected: Wayland uses `wl-copy`, X11 uses
+> `xclip`; notifications use `notify-send`. If a tool is missing, that step is
+> skipped with a log line rather than failing the grab.
+
+### Build from source
 
 ```bash
 git clone https://github.com/km-rjun/pixelens
@@ -33,119 +40,144 @@ cd pixelens
 cargo build --release
 ```
 
-This produces two binaries in `target/release/`:
+This produces three binaries in `target/release/`:
 
-- `pixelensd` — the background **daemon** (owns capture + IPC).
-- `pixelens` — the **CLI** client (talks to the daemon over a socket).
-- `pixelens-keyhook` — the **global hotkey listener** (spawned by `pixelens hotkey enable`).
+- **`pixelensd`** — the background **daemon** (owns capture + OCR + clipboard + IPC).
+- **`pixelens`** — the **CLI** client (talks to the daemon over a Unix socket).
+- **`pixelens-keyhook`** — the **global hotkey listener** (spawned by the daemon/cli).
 
-## Runtime dependencies (REQUIRED)
-
-Pixelens shells out to external tools for capture. These must be on `$PATH`.
-
-| Tool | Purpose | Debian/Ubuntu | Arch (pacman) | Fedora (dnf) |
-|------|---------|---------------|---------------|--------------|
-| `slurp` | Region selection | `sudo apt install slurp` | `sudo pacman -S slurp` | `sudo dnf install slurp` |
-| `grim`  | Screen capture  | `sudo apt install grim`  | `sudo pacman -S grim`  | `sudo dnf install grim`  |
-
-Both are **required** for the current build. The daemon's capture pipeline checks for
-them at startup; if either is missing, `pixelens grab` returns an error telling you
-which tool to install and restart the daemon.
-
-> **Tesseract / OCR:** `tesseract-ocr` is the planned OCR engine (M5) but is **not
-> yet consumed** by the daemon in this build, so it is not required to capture a
-> screenshot. Install it ahead of time if you want to be ready:
-> `sudo apt install tesseract-ocr` / `sudo pacman -S tesseract` /
-> `sudo dnf install tesseract`.
-
-**Display servers:** Both **Wayland** and **X11** are supported. Detection checks
-`$WAYLAND_DISPLAY` first, then `$DISPLAY`. The capture path uses `slurp`+`grim`, which
-work on either server. The hotkey backend is chosen automatically: Wayland uses an
-evdev reader (see below); X11 uses an `x11rb` root-window grab.
-
-## Quick start
-
-1. Start the daemon (background; add to autostart if you like):
-
-   ```bash
-   ./target/release/pixelensd &
-   ```
-
-2. Grab a region:
-
-   ```bash
-   ./target/release/pixelens grab
-   # alias: ./target/release/pixelens copy
-   ```
-
-   `slurp` opens; drag to select a rectangle, release to capture (Escape cancels).
-   The daemon prints the saved screenshot path. With a running daemon the CLI exits
-   non-zero if the daemon is down or capture fails, so it is safe in scripts.
-
-3. (Optional) Check the daemon:
-
-   ```bash
-   ./target/release/pixelens status
-   ```
-
-## Global hotkey (UM1)
-
-Bind a system-wide hotkey so you never type the command:
+### First run
 
 ```bash
-./target/release/pixelens hotkey enable
+./target/release/pixelensd &          # start the daemon (background)
+./target/release/pixelens status      # confirm it is up
 ```
 
-This writes a `pixelens-keyhook.service` systemd **user** unit and runs
-`systemctl --user enable --now pixelens-keyhook`. The listener then starts
-automatically on login.
+The daemon writes a default config to `~/.config/pixelens/config.toml` on first
+run if one does not exist.
 
-- **Default combo:** `Super+Shift+T`.
-- **Trigger:** press the combo anywhere; the listener connects to the daemon and fires
-  a grab (same as `pixelens grab`).
-- **Wayland:** the listener reads raw key events from `/dev/input/event*` via evdev,
-  so **your user must be in the `input` group**:
+---
+
+## How to use
+
+### The fast path (recommended)
+
+1. Enable the global hotkey so you never type a command:
+
+   ```bash
+   ./target/release/pixelens hotkey enable
+   ```
+
+   This installs a systemd **user** service (`pixelens-keyhook`) that starts on
+   login. Default combo: **`Super+Shift+T`**.
+
+2. Press the hotkey anywhere. `slurp` opens — drag to select a rectangle and
+   release. Escape cancels.
+
+3. The selected region is OCR'd and the **text is copied to your clipboard**,
+   with a desktop notification confirming the grab.
+
+That is the whole loop. No windows, no confirmations.
+
+### CLI
+
+```bash
+pixelens grab            # capture a region now (alias: pixelens copy)
+pixelens status          # daemon health + last-grab summary
+pixelens cancel          # cancel an in-progress grab
+pixelens hotkey enable   # install + start the hotkey systemd user service
+pixelens hotkey disable  # stop + remove it
+pixelens hotkey status   # service state, combo, daemon up/down
+pixelens autostart enable   # start Pixelens automatically on login (UM3)
+pixelens autostart disable  # remove the autostart
+pixelens autostart status   # show autostart state
+pixelens config list    # print the resolved config
+pixelens config get <key>
+pixelens config set <key> <value>
+```
+
+Examples:
+
+```bash
+pixelens config set general.hotkey Super+Shift+S
+pixelens config set capture.show_preview true
+pixelens config get gui.hud_enabled
+```
+
+### Hotkey on Wayland vs X11
+
+- **Wayland:** the listener reads raw key events from `/dev/input/event*` via
+  evdev, so **your user must be in the `input` group**:
 
   ```bash
   sudo usermod -aG input $USER
-  # then log out and back in (group membership is read at login)
+  # log out and back in for the group to take effect
   ```
 
-  Without the `input` group the listener logs `EvdevUnavailable` and the hotkey will
-  not fire. Verify with `groups`.
-- **X11:** the listener grabs the combo on the root window via `x11rb`; no special
-  group is needed.
-- **Manage it:**
-  ```bash
-  ./target/release/pixelens hotkey status   # shows service state + combo + daemon up/down
-  ./target/release/pixelens hotkey disable  # stops + disables the service
-  ```
-- **Change the combo:** set `general.hotkey` in the config file, or the
-  `PIXELENS_HOTKEY` environment variable (e.g. `Super+Shift+S`). It must be
-  `Mod+Mod+Key` form, where modifiers are `Super`/`Shift`/`Ctrl`/`Alt` (case-insensitive)
-  and the key is a single letter or digit (e.g. `Super+Shift+T`).
+  Without it the listener logs `EvdevUnavailable` and the hotkey will not fire
+  (`groups` to verify).
 
-## Configuration
+- **X11:** the combo is grabbed on the root window via `x11rb`; no special
+  group needed.
 
-Config file: `~/.config/pixelens/config.toml` (created on first run with defaults).
+### Configuration
+
+File: `~/.config/pixelens/config.toml`
 
 ```toml
 [general]
 autostart = false
-theme = "system"
+theme = "system"            # parsed, not yet used
 hotkey = "Super+Shift+T"
 
 [capture]
-show_preview = false
+show_preview = false       # open the screenshot file after grab
+
+[ocr]
+engine = "tesseract"
+
+[gui]
+hud_enabled = true         # master switch for the (deferred) HUD
+hud_timeout_ms = 1500
 ```
 
-- `general.hotkey` — the hotkey combo used by the listener (see above). **Consumed.**
-- `general.autostart`, `general.theme`, `capture.show_preview` — **parsed but not yet
-  read by the daemon** in this build. Editing them has no effect yet; they exist so
-  the config schema is stable for upcoming milestones.
+| Key | Effect | State |
+|-----|--------|-------|
+| `general.hotkey` | Hotkey combo | **Consumed** |
+| `general.autostart` | Auto-start on login | **Consumed** (UM3) |
+| `capture.show_preview` | Open screenshot after grab | **Consumed** |
+| `ocr.engine` | OCR engine selector | **Consumed** (tesseract) |
+| `general.theme` | UI theme | Parsed, not yet used |
+| `gui.hud_enabled` / `gui.hud_timeout_ms` | HUD flags | Parsed; HUD deferred |
 
-> The `pixelens config` CLI subcommand is currently a **stub** — edit the TOML file
-> directly with a text editor.
+Change the combo via the file or the `PIXELENS_HOTKEY` env var (form
+`Mod+Mod+Key`, e.g. `Super+Shift+S`; modifiers `Super`/`Shift`/`Ctrl`/`Alt`,
+key is a single letter/digit).
+
+---
+
+## Status & roadmap
+
+**Shipped and working:**
+
+- Region capture (`slurp` + `grim`) on Wayland **and** X11.
+- Background daemon + CLI over a Unix socket.
+- Global hotkey via systemd user service (UM1), auto-start on login (UM3).
+- OCR via Tesseract → text copied to clipboard + desktop notification (M5/M7).
+- `pixelens config` CLI: `list` / `get` / `set` (M8).
+- Grab-backend IPC for one-shot preview override + display re-detect (UM4
+  backend).
+
+**Deliberately deferred (not bugs — scope decisions):**
+
+- **Visual HUD / actions popup (`pixelens-gui`):** scrapped for now. Pixelens
+  is a utility, not a GUI app. Only minimal, essential grab affordances will be
+  considered later if needed — and the same applies to the Windows release.
+- **History / recall of past grabs:** coming later, not in this build.
+- **Windows support (UM2):** planned, not yet started.
+- **`general.theme`:** parsed but unused until a UI exists.
+
+---
 
 ## Troubleshooting
 
@@ -153,53 +185,52 @@ show_preview = false
 ```
 error: daemon is not running. Start it with: pixelensd
 ```
-Start it: `./target/release/pixelensd &` (or check it is enabled as a service).
-The CLI and the hotkey listener both talk to the daemon over
-`$XDG_RUNTIME_DIR/pixelens.sock` (or `/tmp/pixelens-<uid>.sock` if `XDG_RUNTIME_DIR`
-is unset).
+Start it: `./target/release/pixelensd &` (or enable autostart). The CLI and
+hotkey listener both talk to the daemon over `$XDG_RUNTIME_DIR/pixelens.sock`
+(or `/tmp/pixelens-<uid>.sock` if `XDG_RUNTIME_DIR` is unset).
 
-**Missing `slurp` / `grim`**
-`pixelens grab` returns an error naming the missing tool. Install it via your package
-manager (table above) and restart the daemon.
+**Missing `slurp` / `grim` / `tesseract`**
+`pixelens grab` returns an error naming the missing tool. Install it (table
+above) and retry — no daemon restart needed for tool presence.
 
 **Hotkey not firing on Wayland**
-The evdev reader needs `/dev/input/event*` access. Ensure your user is in the `input`
-group (`sudo usermod -aG input $USER`, then re-login) and confirm with `groups`.
-`pixelens hotkey status` reports the service state; if the listener logged
-`EvdevUnavailable`, the hotkey cannot fire until the group membership is fixed.
+The evdev reader needs `/dev/input/event*` access. Ensure your user is in the
+`input` group (`sudo usermod -aG input $USER`, then re-login) and confirm with
+`groups`. `pixelens hotkey status` reports the service state; if the listener
+logged `EvdevUnavailable`, fix the group membership.
 
-**Capture returns a file path, not text**
-Expected in the current build — OCR (M5) and clipboard copy (M7) are not yet
-implemented. `pixelens grab` captures a screenshot of the region and reports its path.
+**Grab succeeds but clipboard is empty**
+Clipboard write falls back across `wl-copy` (Wayland) / `xclip` (X11). If both
+are absent, the text is still reported via notification and `pixelens status`,
+but not placed on the clipboard. Install the matching tool for your session.
 
-## Architecture
+---
+
+## How it works (technical)
 
 ```
    hotkey (pixelens-keyhook)  ──┐
-                                ├─▶  daemon (pixelensd)
+                                 ├─▶  daemon (pixelensd)
    CLI (pixelens grab)        ──┘        │
-                                         ▼
-                              slurp (select) → grim (capture) → screenshot file
-                                         │
-                            OCR (Tesseract)  ── NOT YET (M5)
-                                         │
-                            clipboard + notification ── NOT YET (M7)
+                                          ▼
+                            slurp (select) → grim (capture) → screenshot
+                                          │
+                            OCR (Tesseract) → extracted text
+                                          │
+                            clipboard (wl-copy / xclip) + notify-send
 ```
 
-The daemon (`pixelensd`) owns the capture pipeline and a Unix-socket IPC server. The
-CLI (`pixelens`) and the hotkey listener (`pixelens-keyhook`) are thin clients: both
-connect to the socket and send `Command::Grab`. The hotkey listener is intentionally
-dumb — all capture state stays in the daemon.
-
-## Not yet implemented (planned)
-
-Marked NOT YET so there is no confusion with shipping behavior:
-
-- OCR text extraction and clipboard copy (M5 / M7).
-- `show_preview`, `autostart`, `theme` config effects.
-- `pixelens config` CLI management (M8).
-- Windows support, system tray, and HUD/actions popup (see
-  `pixelens-plan/13-roadmap-upgrades.md`).
+- **`pixelensd`** owns the capture pipeline and a Unix-socket IPC server. It
+  detects the display server (`$WAYLAND_DISPLAY`, else `$DISPLAY`), runs
+  `slurp` for selection and `grim` for capture, OCRs the result with
+  Tesseract, and copies the text to the clipboard.
+- **`pixelens`** (CLI) and **`pixelens-keyhook`** (hotkey listener) are thin
+  clients: both connect to the socket and send a `Command`. The listener is
+  intentionally dumb — all capture state lives in the daemon.
+- **One-shot overrides (UM4 backend):** `setpreview` / `redetect` IPC commands
+  let a future HUD tune a single grab (preview on/off, re-run display
+  detection) without editing config. The default path is unchanged when no
+  override is set.
 
 ## License
 
