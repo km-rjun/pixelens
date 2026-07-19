@@ -4,7 +4,7 @@ This file is the live status snapshot. Update it whenever you change code or
 learn new facts. Keep the "build status" honest — a green build is the only
 acceptable state to declare work "done".
 
-_Last updated: 2026-07-19 (session: hy3 — UM2 Windows support)_
+_Last updated: 2026-07-19 (session: hy3 — plan advance post-UM2; no new code)_
 
 ## Build status: 🟢 GREEN (workspace)
 - `cargo build --workspace` passes (VM disk now 34% used / 13G free — the old
@@ -60,14 +60,15 @@ _Last updated: 2026-07-19 (session: hy3 — UM2 Windows support)_
 ## Git status
 - Branch: `features/core-loop` (local main pushed here; remote `main` is an
   UNRELATED/different-crate-layout history — do NOT push to `main`).
-- M8 commits this session:
-  - `feat(config): add TOML load/save + get/set` (pixelens-config/src/io.rs)
-  - `feat(cli): implement config list/get/set` (pixelens-cli/src/main.rs)
-  - `feat(keyhook+daemon): consume general.hotkey + show_preview from config` (M8)
-  - `test(config): round-trip loader` (pixelens-config/src/io.rs tests)
-  - `docs(plan): record M8 configuration` (this changelog/progress/milestone updates)
-- Remote push: NOT pushed this session (branch `features/core-loop` already
-  exists; remote `main` diverged — do not force-push).
+- Commits this session (post-v1.0, all pushed to `origin/features/core-loop`):
+  - UM2 Windows support: `61714c5` feat(um2): Windows support (#[cfg(windows)]
+    pipeline) + docs (ipc named-pipe, keyhook RegisterHotKey Win+Shift+S,
+    capture WinRT mock, notify arboard/winrt, Cargo windows-0.58 features;
+    README Windows section + 15-doc status/§11).
+  - Prior milestones (M8 config, UM1 hotkey, UM3 autostart, UM4 backend)
+    committed earlier this cycle and pushed.
+- Remote push: **PUSHED** — `git push origin features/core-loop` accepted
+  (`e777b49..61714c5`); follow-up `--dry-run` reports "Everything up-to-date".
 
 ## What is actually working
 - M1 setup ✅ · M2 display detection ✅ (Wayland + X11) · M3 v1 slurp+grim capture path ✅
@@ -106,16 +107,18 @@ _Last updated: 2026-07-19 (session: hy3 — UM2 Windows support)_
 > `pixelens-capture/src/x11.rs` is **still a stub** (`NotImplemented("X11CaptureProvider (M4)")`),
 > consistent with 03-milestones.md (M4 = ❌). See "What is actually working" above.
 
-## Upgrade roadmap (post-v1.0)
-- Upgrade M1: Hotkey daemon — binds global hotkey, systemd service backend
-- Upgrade M2: Windows support — replaces Snipping Tool, same 2s flow
-- Upgrade M3: Systemd + autostart integration
-- Upgrade M4: Grab UI / Actions popup — backend done 2026-07-19; **visual HUD
-  SCRAPPED** — Pixelens stays a utility tool (no HUD/tray/window). See tracking.
-- Upgrade M5: Portal-native capture speedup
-- Upgrade M6: Multi-display smart selection
-- Upgrade M7: On-demand vs continuous mode
-- Upgrade M8: Tesseract performance tuning
+## Upgrade roadmap (post-v1.0) — status
+- UM1 Hotkey daemon — ✅ DONE (2026-07-19); live QA pending (headless).
+- UM2 Windows support — 🟡 implemented (2026-07-19); type-checks on
+  `x86_64-pc-windows-msvc`; native Windows run pending (no Windows host).
+- UM3 Systemd + autostart — ✅ DONE (2026-07-19); live QA pending (headless).
+- UM4 Grab UI — ✅ backend DONE (2026-07-19); **visual HUD SCRAPPED** (utility
+  tool, no HUD/tray/window; same for Windows). See tracking.
+- UM5 Portal-native capture — ⬜ next candidate (not started). Speedup via
+  xdg-desktop-portal behind `portal` feature; transparent slurp+grim fallback.
+- UM6 Multi-display smart selection — ⬜ not started.
+- UM7 On-demand vs continuous mode — ⬜ not started.
+- UM8 Tesseract performance tuning — ⬜ not started.
 
 See `13-roadmap-upgrades.md` for details. Each upgrade requires QA checkpoint
 and safety gate before GitHub push.
@@ -128,9 +131,10 @@ and safety gate before GitHub push.
 - `README.md` — rewritten with setup, quick-start, config, troubleshooting.
 
 ## Upgrade milestone tracking (post-v1.0)
-- UM1 Hotkey daemon — 🚧 in progress: `pixelens-keyhook` crate done, CLI
-  `hotkey` subcommand done, systemd unit generation done. Manual QA pending
-  (needs real Wayland/X11 session — headless env blocks it).
+- UM1 Hotkey daemon — ✅ DONE (2026-07-19): `pixelens-keyhook` crate (Wayland
+  evdev + X11 x11rb), CLI `hotkey` subcommand, systemd --user unit generation.
+  Manual live QA pending (needs real Wayland/X11 session — headless blocks it),
+  but code path is complete and verified (fmt/clippy/test green).
 - UM2 Windows support — 🟡 **implemented (2026-07-19)**: full `#[cfg(windows)]`
   pipeline wired + type-checks against `x86_64-pc-windows-msvc` (zero
   warnings). `pixelens-capture/src/windows.rs` (WinRT `GraphicsCapturePicker`
@@ -173,17 +177,22 @@ and safety gate before GitHub push.
 
 ## Immediate next action
 M8 (configuration) ✅, UM3 (autostart) ✅, UM4 backend ✅, and **UM2 Windows
-support (code-complete + type-checks)** are DONE and committed to
+support (code-complete + type-checks, committed `61714c5`)** are DONE on
 `features/core-loop`. The core loop (hotkey → select → OCR → text on
 clipboard) + config + autostart + UM4 IPC/daemon/config backend + UM2 Windows
 `#[cfg(windows)]` pipeline are code-complete and verified (fmt/clippy/test
 green on Linux; `cargo check --target x86_64-pc-windows-msvc` zero warnings).
 **UM4 visual HUD is SCRAPPED** — Pixelens stays a utility tool (no
 HUD/tray/window; same for Windows release). History/recall deferred. README
-rewritten + Windows section added. Remaining: a native **Windows run** of the
-UM2 picker→capture→OCR→clipboard loop (needs a real Windows host — not in this
-Linux VM), then UM5–UM8. _Last updated: 2026-07-19 (session: hy3 — UM2
-Windows support)._
+rewritten + Windows section added.
+
+**Next code candidate: UM5 (portal-native capture)** — xdg-desktop-portal
+behind a `portal` feature flag with transparent slurp+grim fallback; targets
+the PRD <2s goal (~300-400ms faster on some compositors). Not started.
+Outstanding headless-blocked QA (native Windows run of UM2 loop; live UM1/UM3
+desktop QA) remains documented, not compromised.
+
+_Last updated: 2026-07-19 (session: hy3 — plan advance post-UM2; no new code)._
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.

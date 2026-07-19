@@ -356,5 +356,29 @@ unrelated changes in one entry.
   OCR → clipboard loop) needs a real Windows 10/11 host — not available in this
   Linux VM. Only type-checks via `cargo check`. `cargo build
   --target x86_64-pc-windows-msvc` (link) also not exercised here.
-- Commit pending (will push to `features/core-loop`, user pre-authorized):
-  `feat(um2): Windows support (#[cfg(windows)] pipeline) + docs`.
+- Commit: `61714c5` `feat(um2): Windows support (#[cfg(windows)] pipeline) + docs`
+  — **PUSHED** to `origin/features/core-loop` (`e777b49..61714c5`; follow-up
+  `--dry-run` → "Everything up-to-date"). (The "commit pending" line in the
+  original entry is superseded — it was committed + pushed the same session.)
+
+---
+
+2026-07-19 | session `hy3` (plan advance post-UM2 — no new code)
+- **Plan-only pass** (user chose docs-advance over building the next milestone):
+  - `10-progress.md`: corrected stale **UM1 "🚧 in progress"** contradiction
+    (it was already marked DONE at line 84) → now ✅ DONE with QA caveat.
+  - `10-progress.md`: rewrote the upgrade-roadmap list into a **per-milestone
+    status** block (UM1✅ UM2🟡 UM3✅ UM4✅-backend/HUD-scrapped UM5–UM8 ⬜).
+  - `10-progress.md`: fixed the **Git status** block (was "NOT pushed" / only
+    M8 commits listed) → now records `61714c5` UM2 push + "Everything
+    up-to-date"; top "Last updated" stamp refreshed.
+  - `10-progress.md`: **Immediate next action** now names **UM5 (portal-native
+    capture)** as the next code candidate (xdg-desktop-portal behind a `portal`
+    feature flag w/ slurp+grim fallback) — not started.
+  - `11-changelog.md`: corrected the UM2 entry's stale "Commit pending" tail →
+    records `61714c5` committed + pushed.
+- **State after:** tracking docs now internally consistent with `61714c5` and
+  the scrapped-HUD / deferred-history decisions. No source code changed.
+- **QA:** n/a (docs only). Prior UM2 gates remain green (fmt/clippy/test/
+  windows-msvc-check) — re-affirmed by a fresh ad-hoc run this session.
+- Next: UM5 implementation (deferred pending user go-ahead)..
