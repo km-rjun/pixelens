@@ -39,6 +39,11 @@ pub enum Command {
     /// u6: translate text via the configured model. `payload` carries
     /// [`TranslatePayload`]; the response reuses [`AiResponsePayload`].
     Translate,
+    /// u7: copy arbitrary text (usually the OCR result of a capture) to
+    /// the system clipboard. `payload` carries [`CopyPayload`]; the
+    /// response reuses [`AiResponsePayload`] for the status string
+    /// (text=status, model="clipboard").
+    Copy,
 }
 
 /// Payload for [`Command::SetPreview`].
@@ -100,6 +105,18 @@ pub struct TranslatePayload {
     pub text: String,
     /// Target language name or code, e.g. "Spanish" or "fr".
     pub target_lang: String,
+}
+
+/// Payload for [`Command::Copy`].
+///
+/// `text` is the content to write to the system clipboard. The daemon
+/// selects a clipboard backend (wl-copy/xclip/xsel/copyq) based on the
+/// active display server; a missing backend degrades to a structured
+/// error rather than failing the whole request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CopyPayload {
+    /// Text to copy to the clipboard.
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -357,5 +374,19 @@ mod tests {
         };
         let r = IpcResponse::ok("req-s".to_string(), &sresp).unwrap();
         assert_eq!(r.payload["url"], "https://www.google.com/search?q=hi");
+    }
+
+    #[test]
+    fn u7_copy_command_and_payload_round_trip() {
+        let json = serde_json::to_string(&Command::Copy).unwrap();
+        assert_eq!(json, "\"copy\"");
+        let back: Command = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, Command::Copy);
+
+        let payload = CopyPayload {
+            text: "hello world".to_string(),
+        };
+        let pj = serde_json::to_string(&payload).unwrap();
+        assert_eq!(serde_json::from_str::<CopyPayload>(&pj).unwrap(), payload);
     }
 }

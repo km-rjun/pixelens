@@ -14,8 +14,9 @@ use pixelens_core::{
     CaptureError, CaptureImage, CaptureProvider, CaptureRequest, OcrEngine, PixelensError, Rect,
 };
 use pixelens_ipc::{
-    AiPayload, AiResponsePayload, GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus,
-    ReverseImagePayload, SearchPayload, SearchResponsePayload, SetPreviewPayload, TranslatePayload,
+    AiPayload, AiResponsePayload, CopyPayload, GrabResponsePayload, IpcRequest, IpcResponse,
+    ResponseStatus, ReverseImagePayload, SearchPayload, SearchResponsePayload, SetPreviewPayload,
+    TranslatePayload,
 };
 use pixelens_notify::{NotificationKind, Notifier, NotifySend};
 use pixelens_search::{build_search_url, ReverseImageSearcher};
@@ -52,6 +53,7 @@ impl Dispatcher {
             Command::Search => self.handle_search(&request),
             Command::ReverseImage => self.handle_reverse_image(&request).await,
             Command::Translate => self.handle_translate(&request).await,
+            Command::Copy => self.handle_copy(&request),
         }
     }
 
@@ -394,6 +396,46 @@ impl Dispatcher {
                 request.request_id.clone(),
                 format!("serialize search response: {e}"),
             ),
+        }
+    }
+
+    /// u7: copy text to the system clipboard via the display-appropriate
+    /// backend. Pure (no network), so it runs inline. The status string
+    /// is surfaced via [`AiResponsePayload`] (text=status, model="clipboard").
+    fn handle_copy(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: CopyPayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid copy payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+
+        match copy_text(&payload.text, self.state.display) {
+            Ok(()) => {
+                let status = format!("copied {} bytes to clipboard", payload.text.len());
+                match IpcResponse::ok(
+                    request.request_id.clone(),
+                    AiResponsePayload {
+                        text: status,
+                        model: "clipboard".to_string(),
+                    },
+                ) {
+                    Ok(r) => r.with_status(ResponseStatus::Ok),
+                    Err(e) => IpcResponse::error(
+                        request.request_id.clone(),
+                        format!("serialize copy response: {e}"),
+                    ),
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "clipboard copy failed");
+                IpcResponse::error(request.request_id.clone(), e.to_string())
+                    .with_status(ResponseStatus::Error)
+            }
         }
     }
 
