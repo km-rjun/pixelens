@@ -407,11 +407,23 @@ fn rand_delay(base_ms: u64) -> u64 {
 
 /// Classify a `reqwest` send error message as a transient transport failure
 /// worth retrying: connection refused, timeout, DNS, broken pipe, TLS handshake
-/// drop, or incomplete read. Deliberately excludes 401/429 (handled elsewhere)
-/// and any 4xx/5xx body errors (those are `RequestFailed`, not transport).
+/// drop, or incomplete read. Deliberately excludes 401/429 (handled elsewhere,
+/// and 429 is surfaced as `RateLimited`) and any 4xx/5xx body errors (those are
+/// `RequestFailed`, not transport).
+///
+/// NOTE: `reqwest::blocking`'s generic send failure is the bare string
+/// `error sending request for url (<url>)` — it carries NO status code, so it
+/// represents a failure *before* any HTTP response (connect drop, timeout, DNS,
+/// TLS, broken pipe). That is precisely the transient class we want to retry,
+/// so the generic prefix is the catch-all.
 fn is_transient_transport(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
-    m.contains("connection refused")
+    // Never retry auth or explicit rate-limit — those are surfaced distinctly.
+    if m.contains("401") || m.contains("unauthorized") || m.contains("rate limit") {
+        return false;
+    }
+    m.contains("error sending request for url")
+        || m.contains("connection refused")
         || m.contains("connection reset")
         || m.contains("connection aborted")
         || m.contains("broken pipe")
@@ -561,6 +573,36 @@ mod tests {
         assert!(model_supports_vision("gpt-3.5-turbo", local));
         let local_loopback = "http://127.0.0.1:11434/v1";
         assert!(model_supports_vision("some-unknown-model", local_loopback));
+    }
+
+    #[test]
+    fn test_is_transient_transport_classification() {
+        // Transient — should be retried.
+        assert!(is_transient_transport(
+            "error sending request: connection refused"
+        ));
+        assert!(is_transient_transport(
+            "error trying to connect: tcp connect error: Connection timed out"
+        ));
+        assert!(is_transient_transport("dns failure: no such host"));
+        assert!(is_transient_transport("broken pipe (os error 32)"));
+        assert!(is_transient_transport(
+            "tls handshake failed: Connection reset by peer"
+        ));
+        assert!(is_transient_transport("connection reset by peer"));
+        // The real-world reqwest blocking generic send failure (no status code).
+        assert!(is_transient_transport(
+            "error sending request for url (http://10.0.0.88:11434/api/chat)"
+        ));
+        // Not transient — must NOT retry (would mask real application errors).
+        assert!(!is_transient_transport(
+            "HTTP status client error (401 Unauthorized)"
+        ));
+        assert!(!is_transient_transport(
+            "HTTP status server error (500 Internal Server Error)"
+        ));
+        assert!(!is_transient_transport("Failed to parse JSON response"));
+        assert!(!is_transient_transport("invalid api key"));
     }
 
     #[test]
