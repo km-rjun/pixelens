@@ -101,7 +101,10 @@ mod tests {
     #[test]
     fn show_menu_reads_shimmed_fuzzel() {
         // Shim `fuzzel` on PATH: echo the requested entry and exit 0.
-        let dir = std::env::temp_dir().join(format!("pixelens-menu-shim-{}", std::process::id()));
+        // Serialize with the wofi shim test — both mutate the process-global PATH.
+        let _guard = crate::path_test_lock().lock().unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("pixelens-menu-shim-fuzzel-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let bin = dir.join("fuzzel");
         std::fs::write(
