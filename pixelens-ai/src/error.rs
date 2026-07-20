@@ -35,6 +35,10 @@ pub enum AiError {
     },
     /// Throttled by the provider.
     RateLimited { kind: RateLimitKind },
+    /// Transient transport-level failure (connection refused, timeout, DNS,
+    /// broken pipe). Distinct from `RequestFailed` so callers can retry it
+    /// without masking real request/response errors.
+    Transport { msg: String },
 }
 
 impl fmt::Display for AiError {
@@ -51,6 +55,7 @@ impl fmt::Display for AiError {
                 endpoint, config_path
             ),
             AiError::RateLimited { kind } => write!(f, "rate limited: {}", kind),
+            AiError::Transport { msg } => write!(f, "AI transport error: {}", msg),
         }
     }
 }
@@ -73,6 +78,7 @@ impl PartialEq for AiError {
                 },
             ) => e1 == e2 && c1 == c2,
             (AiError::RateLimited { kind: k1 }, AiError::RateLimited { kind: k2 }) => k1 == k2,
+            (AiError::Transport { msg: a }, AiError::Transport { msg: b }) => a == b,
             _ => false,
         }
     }

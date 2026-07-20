@@ -233,6 +233,8 @@ impl OpenAiClient {
                         retry_after_secs: None,
                     },
                 }
+            } else if is_transient_transport(&msg) {
+                AiError::Transport { msg }
             } else {
                 AiError::RequestFailed(msg)
             }
@@ -300,7 +302,14 @@ impl OpenAiClient {
             .header("Content-Type", "application/json")
             .json(&native)
             .send()
-            .map_err(|e| AiError::RequestFailed(format!("{}", e)))?;
+            .map_err(|e| {
+                let msg = format!("{}", e);
+                if is_transient_transport(&msg) {
+                    AiError::Transport { msg }
+                } else {
+                    AiError::RequestFailed(msg)
+                }
+            })?;
 
         let status = response.status();
         let body = response
@@ -372,6 +381,18 @@ impl OpenAiClient {
                     };
                     thread::sleep(delay);
                 }
+                Err(AiError::Transport { .. }) => {
+                    if attempts >= MAX_RETRIES {
+                        return Err(AiError::Transport {
+                            msg: format!(
+                                "transport failed after {} attempts: {}",
+                                attempts, self.endpoint
+                            ),
+                        });
+                    }
+                    let base = BASE_DELAY_MS * 2u64.pow(attempts - 1);
+                    thread::sleep(Duration::from_millis(rand_delay(base)));
+                }
                 Err(e) => return Err(e),
             }
         }
@@ -382,6 +403,29 @@ fn rand_delay(base_ms: u64) -> u64 {
     let jitter = (base_ms as f64 * 0.2) as u64;
     let offset = (base_ms / 5).min(jitter);
     base_ms - offset + (fastrand::u64(0..offset * 2 + 1))
+}
+
+/// Classify a `reqwest` send error message as a transient transport failure
+/// worth retrying: connection refused, timeout, DNS, broken pipe, TLS handshake
+/// drop, or incomplete read. Deliberately excludes 401/429 (handled elsewhere)
+/// and any 4xx/5xx body errors (those are `RequestFailed`, not transport).
+fn is_transient_transport(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("connection refused")
+        || m.contains("connection reset")
+        || m.contains("connection aborted")
+        || m.contains("broken pipe")
+        || m.contains("timeout")
+        || m.contains("timed out")
+        || m.contains("unable to connect")
+        || m.contains("dns")
+        || m.contains("name resolution")
+        || m.contains("no route")
+        || m.contains("host unreachable")
+        || m.contains("tls")
+        || m.contains("handshake")
+        || m.contains("incomplete message")
+        || m.contains("request or response body error")
 }
 
 #[cfg(test)]
