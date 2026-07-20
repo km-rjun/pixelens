@@ -52,9 +52,21 @@ const VISION_MODELS: &[&str] = &[
 ];
 
 /// Whether a model name refers to a vision-capable model.
-pub fn model_supports_vision(model: &str) -> bool {
+///
+/// `endpoint` is consulted so local Ollama hosts (where any pulled model may be
+/// vision-capable) relax the named allowlist, while remote providers keep the
+/// explicit list (so a text-only model like `gpt-3.5-turbo` is never sent an image).
+pub fn model_supports_vision(model: &str, endpoint: &str) -> bool {
     let lower = model.to_lowercase();
-    VISION_MODELS.iter().any(|m| lower.contains(m))
+    let named = VISION_MODELS.iter().any(|m| lower.contains(m));
+    // Local Ollama hosts relax the allowlist: any pulled model may be vision-capable,
+    // while remote providers keep the explicit list (so text-only models like
+    // `gpt-3.5-turbo` are never sent an image).
+    let local_ollama = endpoint.contains(":11434")
+        || endpoint.contains("localhost")
+        || endpoint.contains("127.0.0.1")
+        || endpoint.contains("0.0.0.0");
+    named || local_ollama
 }
 
 /// OpenAI-compatible chat client. `chat()` is **synchronous** (uses
@@ -106,7 +118,7 @@ impl OpenAiClient {
         let mut content = serde_json::Value::Array(vec![]);
 
         if let Some(ref path) = request.image_path {
-            if !model_supports_vision(&self.model) {
+            if !model_supports_vision(&self.model, &self.endpoint) {
                 return Err(AiError::RequestFailed(format!(
                     "Model '{}' does not support image input. Use a vision-capable model like gpt-4o, gpt-4-turbo, or claude-3-sonnet",
                     self.model
@@ -372,13 +384,23 @@ mod tests {
 
     #[test]
     fn test_model_supports_vision() {
-        assert!(model_supports_vision("gpt-4o"));
-        assert!(model_supports_vision("gpt-4o-mini"));
-        assert!(model_supports_vision("gpt-4-turbo"));
-        assert!(model_supports_vision("claude-3-sonnet"));
-        assert!(model_supports_vision("llava-13b"));
-        assert!(!model_supports_vision("gpt-3.5-turbo"));
-        assert!(!model_supports_vision("text-davinci-003"));
+        let remote = "https://api.openai.com/v1";
+        // Named allowlist — works regardless of endpoint.
+        assert!(model_supports_vision("gpt-4o", remote));
+        assert!(model_supports_vision("gpt-4o-mini", remote));
+        assert!(model_supports_vision("gpt-4-turbo", remote));
+        assert!(model_supports_vision("claude-3-sonnet", remote));
+        assert!(model_supports_vision("llava-13b", remote));
+        // Remote text-only models stay rejected.
+        assert!(!model_supports_vision("gpt-3.5-turbo", remote));
+        assert!(!model_supports_vision("text-davinci-003", remote));
+        // Local Ollama host relaxes the allowlist for any model name.
+        let local = "http://10.0.0.88:11434/v1";
+        assert!(model_supports_vision("hermes-qwen3:latest", local));
+        assert!(model_supports_vision("qwen3.5:9b", local));
+        assert!(model_supports_vision("gpt-3.5-turbo", local));
+        let local_loopback = "http://127.0.0.1:11434/v1";
+        assert!(model_supports_vision("some-unknown-model", local_loopback));
     }
 
     #[test]
