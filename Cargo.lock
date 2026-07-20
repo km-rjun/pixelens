@@ -1850,6 +1850,7 @@ dependencies = [
  "pixelens-config",
  "pixelens-core",
  "pixelens-ipc",
+ "pixelens-menu",
  "pixelens-notify",
  "pixelens-ocr",
  "pixelens-overlay",

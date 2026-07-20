@@ -39,6 +39,7 @@ pixelens-portal = { path = "pixelens-portal" }
 pixelens-keyhook = { path = "pixelens-keyhook" }
 pixelens-ai = { path = "pixelens-ai" }
 pixelens-search = { path = "pixelens-search" }
+pixelens-menu = { path = "pixelens-menu" }
 
 # External dependencies pinned at workspace level
 serde = { version = "1.0", features = ["derive"] }

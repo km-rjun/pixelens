@@ -12,7 +12,14 @@ use std::sync::{Arc, Mutex};
 
 use pixelens_capture::{CaptureBackend, DisplayServer, GrabPipeline};
 use pixelens_config::Config;
+use pixelens_menu::MenuBackend;
 use pixelens_ocr::TesseractOcrEngine;
+
+/// An optional menu backend override. `None` (production default) lets the
+/// dispatcher auto-detect one via [`pixelens_menu::detect_backend`]; tests and
+/// embedders inject a concrete backend here to avoid touching global state
+/// (stdin / PATH / DBus).
+pub type MenuOverride = Arc<dyn MenuBackend + Send + Sync + 'static>;
 
 /// One-shot GUI/UM4 state mutated via IPC (`SetPreview`, `Redetect`) and
 /// consumed by the next grab. Behind a mutex so the IPC handler and the
@@ -48,6 +55,8 @@ pub struct DaemonState {
     pub config: Config,
     /// UM4 one-shot overrides, shared with the IPC handler.
     pub one_shot: Arc<Mutex<OneShot>>,
+    /// u8: optional injected menu backend. `None` => dispatcher auto-detects.
+    pub menu_override: Option<MenuOverride>,
 }
 
 impl DaemonState {
@@ -57,6 +66,7 @@ impl DaemonState {
         ocr: Option<TesseractOcrEngine>,
         config: Config,
         portal_backend: Option<Arc<CaptureBackend>>,
+        menu_override: Option<MenuOverride>,
     ) -> Self {
         Self {
             display,
@@ -65,6 +75,7 @@ impl DaemonState {
             portal_backend,
             config,
             one_shot: Arc::new(Mutex::new(OneShot::default())),
+            menu_override,
         }
     }
 
@@ -111,7 +122,7 @@ mod tests {
     fn state_with(show_preview: bool) -> DaemonState {
         let mut config = Config::default();
         config.capture.show_preview = show_preview;
-        DaemonState::new(DisplayServer::Wayland, None, None, config, None)
+        DaemonState::new(DisplayServer::Wayland, None, None, config, None, None)
     }
 
     #[test]

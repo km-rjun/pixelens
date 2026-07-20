@@ -95,7 +95,7 @@ fn build_action_bar(app: &Application, tx: mpsc::Sender<MenuChoice>) {
 /// Build the action-bar backend, spawning the GTK event loop on a background
 /// thread. Returns a receiver-backed [`ActionBarBackend`].
 #[cfg(feature = "menu-gtk")]
-pub fn create_backend() -> Result<Box<dyn MenuBackend>, MenuError> {
+pub fn create_backend() -> Result<Box<dyn MenuBackend + Send + Sync + 'static>, MenuError> {
     let (tx, rx) = mpsc::channel();
 
     std::thread::spawn(move || {
@@ -117,7 +117,7 @@ pub fn create_backend() -> Result<Box<dyn MenuBackend>, MenuError> {
 
 /// Without the `menu-gtk` feature there is no GTK to spawn.
 #[cfg(not(feature = "menu-gtk"))]
-pub fn create_backend() -> Result<Box<dyn MenuBackend>, MenuError> {
+pub fn create_backend() -> Result<Box<dyn MenuBackend + Send + Sync + 'static>, MenuError> {
     Err(MenuError::Backend(
         "Pixelens was built without the Cargo feature `menu-gtk`. \
          Rebuild with: cargo build --release --features menu-gtk"

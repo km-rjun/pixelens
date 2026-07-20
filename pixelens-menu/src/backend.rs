@@ -7,7 +7,9 @@ use crate::{action_bar, fuzzel, stdin, wofi};
 ///
 /// Accepted names: `stdin`, `fuzzel`, `wofi`, `action_bar`. Unknown names
 /// yield [`MenuError::Other`].
-pub fn create_backend(name: &str) -> Result<Box<dyn MenuBackend>, MenuError> {
+pub fn create_backend(
+    name: &str,
+) -> Result<Box<dyn MenuBackend + Send + Sync + 'static>, MenuError> {
     match name {
         "stdin" => Ok(Box::new(stdin::StdinMenu)),
         "fuzzel" => Ok(Box::new(fuzzel::FuzzelMenu)),
@@ -20,7 +22,7 @@ pub fn create_backend(name: &str) -> Result<Box<dyn MenuBackend>, MenuError> {
 /// Auto-select a backend: prefer the GTK action bar when compiled in, else the
 /// first available dmenu-compatible launcher (`fuzzel` > `wofi`), falling back
 /// to `stdin` when nothing graphical is present.
-pub fn detect_backend() -> Result<Box<dyn MenuBackend>, MenuError> {
+pub fn detect_backend() -> Result<Box<dyn MenuBackend + Send + Sync + 'static>, MenuError> {
     if cfg!(feature = "menu-gtk") {
         return action_bar::create_backend();
     }

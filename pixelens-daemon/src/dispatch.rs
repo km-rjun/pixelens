@@ -18,7 +18,7 @@ use pixelens_ipc::{
     ResponseStatus, ReverseImagePayload, SearchPayload, SearchResponsePayload, SetPreviewPayload,
     TranslatePayload,
 };
-use pixelens_notify::{NotificationKind, Notifier, NotifySend};
+use pixelens_menu::{self, MenuBackend, MenuChoice};
 use pixelens_search::{build_search_url, ReverseImageSearcher};
 
 use crate::clipboard::copy_text;
@@ -168,30 +168,14 @@ impl Dispatcher {
         // (OCR is computed inside the capture branch above; `text` is
         // already resolved here.)
 
-        // M7: complete the core loop. The capture + OCR already
-        // succeeded above; now push the result to the user:
-        //  - non-empty text → copy to clipboard + "text copied" toast
-        //  - empty text      → "no text found" toast (NOT an error)
-        // Both clipboard and notify are best-effort and must never
-        // turn a successful capture into a failed grab.
-        let notifier = NotifySend::new();
-        if text.is_empty() {
-            tracing::info!("grab produced no text; notifying 'no text found'");
-            if let Err(e) = notifier.send(NotificationKind::NoTextFound) {
-                tracing::warn!(error = %e, "failed to send 'no text found' notification");
-            }
-        } else {
-            match copy_text(&text, self.state.display) {
-                Ok(()) => tracing::info!("copied extracted text to clipboard"),
-                Err(e) => tracing::warn!(
-                    error = %e,
-                    "clipboard copy failed; continuing without clipboard text"
-                ),
-            }
-            if let Err(e) = notifier.send(NotificationKind::TextCopied) {
-                tracing::warn!(error = %e, "failed to send 'text copied' notification");
-            }
-        }
+        // M7: complete the core loop. The capture + OCR already succeeded
+        // u8: rather than unconditionally copying, consult the action
+        // menu and dispatch the user's chosen side effect (copy/search/ai/
+        // translate). `Cancel` or a backend failure degrades gracefully to a
+        // plain capture report — a menu hiccup never turns a good grab into a
+        // failed one. The grab response below always reports the capture
+        // metadata regardless of which action ran.
+        let _action_resp = self.decide_action(&text, &request.request_id).await;
 
         let payload = GrabResponsePayload {
             path,
@@ -207,6 +191,94 @@ impl Dispatcher {
                 format!("failed to serialise grab response: {e}"),
             ),
         }
+    }
+
+    /// After an OCR capture, consult the action menu and run the chosen command.
+    ///
+    /// The backend comes from `DaemonState::menu_override` when present (tests /
+    /// embedders), otherwise auto-detected via [`pixelens_menu::detect_backend`].
+    /// If no backend is usable or it errors, we *gracefully degrade* to the
+    /// previous v1 behavior (copy the OCR text) — the menu is never a hard
+    /// failure point. A `Cancel` choice short-circuits to a no-op so the grab
+    /// still reports the capture.
+    ///
+    /// Returns the response produced by running the chosen action (or the
+    /// fallback), so callers/tests can observe which side effect fired.
+    async fn decide_action(&self, ocr_text: &str, request_id: &str) -> IpcResponse {
+        let backend: std::sync::Arc<dyn MenuBackend + Send + Sync> = match self
+            .state
+            .menu_override
+            .clone()
+        {
+            Some(b) => b,
+            None => match pixelens_menu::detect_backend() {
+                Ok(b) => std::sync::Arc::from(b),
+                Err(e) => {
+                    tracing::warn!(error = %e, "menu backend unavailable; copying to clipboard");
+                    return self.auto_copy_fallback(ocr_text, request_id).await;
+                }
+            },
+        };
+
+        let choice = match backend.show_menu(ocr_text) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(error = %e, "menu backend failed; copying to clipboard");
+                return self.auto_copy_fallback(ocr_text, request_id).await;
+            }
+        };
+
+        match choice {
+            MenuChoice::Cancel => {
+                tracing::info!("menu choice: cancel — capture reported, no action");
+                IpcResponse::ok(
+                    request_id.to_string(),
+                    AiResponsePayload {
+                        text: "capture cancelled — no action".to_string(),
+                        model: "menu".to_string(),
+                    },
+                )
+                .expect("serialize cancel payload")
+            }
+            // Run the chosen action through its concrete handler. We call the
+            // handler directly (not `dispatch`) to avoid a recursive `async fn`
+            // future (E0733).
+            other => self.run_menu_choice(other, ocr_text, request_id).await,
+        }
+    }
+
+    /// Dispatch a `MenuChoice` to its concrete handler without recursing through
+    /// `dispatch`. Builds the minimal `IpcRequest` each handler expects and calls
+    /// the matching `handle_*` method directly.
+    async fn run_menu_choice(
+        &self,
+        choice: MenuChoice,
+        ocr_text: &str,
+        request_id: &str,
+    ) -> IpcResponse {
+        let req = choice.to_request(ocr_text, format!("{request_id}-menu"));
+        match choice {
+            MenuChoice::Copy => self.handle_copy(&req),
+            MenuChoice::Search => self.handle_search(&req),
+            MenuChoice::Ai => self.handle_ai(&req).await,
+            MenuChoice::Translate => self.handle_translate(&req).await,
+            MenuChoice::Cancel => self.handle_copy(&req), // unreachable: handled above
+        }
+    }
+
+    /// Pre-u8 behavior, retained as the graceful-degrade path: copy the OCR
+    /// text to the clipboard and toast.
+    async fn auto_copy_fallback(&self, ocr_text: &str, request_id: &str) -> IpcResponse {
+        use pixelens_ipc::Command;
+        let req = IpcRequest {
+            command: Command::Copy,
+            request_id: format!("{request_id}-fallback"),
+            payload: serde_json::to_value(CopyPayload {
+                text: ocr_text.to_string(),
+            })
+            .expect("serialize copy payload"),
+        };
+        self.handle_copy(&req)
     }
 
     /// OCR a captured image file on disk (pipeline / slurp+grim path).
@@ -566,4 +638,104 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use crate::state::OneShot;
+    use pixelens_capture::DisplayServer;
+    use pixelens_config::Config;
+    use pixelens_ipc::{AiResponsePayload, SearchResponsePayload};
+    use pixelens_menu::{MenuBackend, MenuChoice, MenuError};
+
+    /// Injected menu backend that returns a pre-set choice and records that
+    /// it was consulted (with the OCR text it received).
+    struct StubBackend {
+        choice: MenuChoice,
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MenuBackend for StubBackend {
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+
+        fn show_menu(&self, ocr_text: &str) -> Result<MenuChoice, MenuError> {
+            self.seen.lock().unwrap().push(ocr_text.to_string());
+            Ok(self.choice)
+        }
+    }
+
+    fn test_state(backend: StubBackend) -> DaemonState {
+        DaemonState {
+            display: DisplayServer::Wayland,
+            pipeline: None,
+            ocr: None,
+            config: Config::default(),
+            portal_backend: None,
+            one_shot: Arc::new(Mutex::new(OneShot::default())),
+            menu_override: Some(Arc::new(backend)),
+        }
+    }
+
+    #[tokio::test]
+    async fn decide_action_copy_dispatches_clipboard() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let state = test_state(StubBackend {
+            choice: MenuChoice::Copy,
+            seen: seen.clone(),
+        });
+        let dispatcher = Dispatcher::new(Arc::new(state));
+
+        let resp = dispatcher.decide_action("hello world", "req-1").await;
+
+        // Menu was consulted with the OCR text.
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &["hello world".to_string()]
+        );
+        // Copy handler ran. In this headless env there is no clipboard backend,
+        // so it returns an Error status — the point is the menu→handler wiring
+        // (not a real clipboard write).
+        assert_eq!(resp.status, ResponseStatus::Error);
+        let msg = resp
+            .payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(msg.to_lowercase().contains("clipboard"));
+    }
+
+    #[tokio::test]
+    async fn decide_action_search_builds_url_request() {
+        let state = test_state(StubBackend {
+            choice: MenuChoice::Search,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        });
+        let dispatcher = Dispatcher::new(Arc::new(state));
+
+        let resp = dispatcher.decide_action("find me", "req-2").await;
+        // Search handler returns Ok with the resulting payload.
+        assert_eq!(resp.status, ResponseStatus::Ok);
+        // The dispatched command was Search → URL search payload built.
+        let payload: SearchResponsePayload = serde_json::from_value(resp.payload).unwrap();
+        assert!(payload.url.contains("find%20me") || payload.url.contains("find me"));
+    }
+
+    #[tokio::test]
+    async fn decide_action_cancel_returns_no_side_effect() {
+        let state = test_state(StubBackend {
+            choice: MenuChoice::Cancel,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        });
+        let dispatcher = Dispatcher::new(Arc::new(state));
+
+        let resp = dispatcher.decide_action("anything", "req-3").await;
+        assert_eq!(resp.status, ResponseStatus::Ok);
+        let payload: AiResponsePayload = serde_json::from_value(resp.payload).unwrap();
+        assert!(payload.text.contains("cancel"));
+    }
 }

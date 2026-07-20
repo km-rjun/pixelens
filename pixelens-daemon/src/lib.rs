@@ -143,6 +143,7 @@ pub async fn run() -> anyhow::Result<()> {
         ocr,
         config,
         portal_backend,
+        None,
     ));
     let dispatcher = Arc::new(dispatch::Dispatcher::new(state));
 
