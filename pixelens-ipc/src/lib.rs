@@ -46,5 +46,6 @@ pub use codec::{
 };
 pub use protocol::{
     AiPayload, AiResponsePayload, Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest,
-    IpcResponse, RequestId, ResponseStatus, SetPreviewPayload, CANCEL_COMMAND,
+    IpcResponse, RequestId, ResponseStatus, ReverseImagePayload, SearchPayload,
+    SearchResponsePayload, SetPreviewPayload, TranslatePayload, CANCEL_COMMAND,
 };

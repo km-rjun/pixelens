@@ -21,6 +21,7 @@ pixelens-ai = { workspace = true }
 pixelens-notify = { workspace = true }
 pixelens-ocr = { workspace = true }
 pixelens-overlay = { workspace = true }
+pixelens-search = { workspace = true }
 
 anyhow = { workspace = true }
 serde_json = { workspace = true }

@@ -1,0 +1,22 @@
+[package]
+name = "pixelens-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Search, reverse-image, and upload logic for Pixelens (Strategy C port)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+fastrand.workspace = true
+urlencoding.workspace = true
+dirs.workspace = true
+ureq = { version = "2.9", features = ["json"] }
+pixelens-config.workspace = true
+
+[dev-dependencies]

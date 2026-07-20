@@ -15,9 +15,10 @@ use pixelens_core::{
 };
 use pixelens_ipc::{
     AiPayload, AiResponsePayload, GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus,
-    SetPreviewPayload,
+    ReverseImagePayload, SearchPayload, SearchResponsePayload, SetPreviewPayload, TranslatePayload,
 };
 use pixelens_notify::{NotificationKind, Notifier, NotifySend};
+use pixelens_search::{build_search_url, ReverseImageSearcher};
 
 use crate::clipboard::copy_text;
 use crate::state::DaemonState;
@@ -48,6 +49,9 @@ impl Dispatcher {
             Command::Redetect => self.handle_redetect(&request),
             Command::SetPreview => self.handle_set_preview(&request),
             Command::Ai => self.handle_ai(&request).await,
+            Command::Search => self.handle_search(&request),
+            Command::ReverseImage => self.handle_reverse_image(&request).await,
+            Command::Translate => self.handle_translate(&request).await,
         }
     }
 
@@ -366,6 +370,140 @@ impl Dispatcher {
         };
         resp.unwrap_or_else(|| {
             IpcResponse::error(request.request_id.clone(), "ai request failed".to_string())
+        })
+    }
+
+    /// u6: build a web-search URL from text. Pure (no network), so it
+    /// runs inline — no `spawn_blocking` needed.
+    fn handle_search(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: SearchPayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid search payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+
+        let url = build_search_url(&payload.text);
+        match IpcResponse::ok(request.request_id.clone(), SearchResponsePayload { url }) {
+            Ok(r) => r.with_status(ResponseStatus::Ok),
+            Err(e) => IpcResponse::error(
+                request.request_id.clone(),
+                format!("serialize search response: {e}"),
+            ),
+        }
+    }
+
+    /// u6: translate text via the configured model. Mirrors `handle_ai`
+    /// but templates a translate instruction into the prompt.
+    async fn handle_translate(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: TranslatePayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid translate payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+
+        let cfg = self.state.config.clone();
+        let prompt = format!(
+            "translate the following text to {}:\n\n{}",
+            payload.target_lang, payload.text
+        );
+
+        let result = tokio::task::spawn_blocking(move || {
+            let client = OpenAiClient::from_config(&cfg);
+            let req = AiRequest {
+                prompt,
+                image_path: None,
+            };
+            client.chat(&req)
+        })
+        .await;
+
+        let resp = match result {
+            Ok(Ok(ai)) => {
+                let payload = AiResponsePayload {
+                    text: ai.content,
+                    model: ai.model,
+                };
+                IpcResponse::ok(request.request_id.clone(), payload).ok()
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "translate request failed");
+                Some(
+                    IpcResponse::error(request.request_id.clone(), e.to_string())
+                        .with_status(ResponseStatus::Error),
+                )
+            }
+            Err(e) => Some(IpcResponse::error(
+                request.request_id.clone(),
+                format!("translate task panicked: {e}"),
+            )),
+        };
+        resp.unwrap_or_else(|| {
+            IpcResponse::error(
+                request.request_id.clone(),
+                "translate request failed".to_string(),
+            )
+        })
+    }
+
+    /// u6: search-by-image. Uploads the capture (per config) then builds a
+    /// Google Lens URL. The status string is surfaced via
+    /// [`AiResponsePayload`] (text=status, model="reverse-image").
+    async fn handle_reverse_image(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: ReverseImagePayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid reverse-image payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+
+        let cfg = self.state.config.clone();
+        let image_path = payload.image_path.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let searcher = ReverseImageSearcher::new(cfg);
+            searcher.run(&image_path)
+        })
+        .await;
+
+        let resp = match result {
+            Ok(Ok(status)) => {
+                let payload = AiResponsePayload {
+                    text: status,
+                    model: "reverse-image".to_string(),
+                };
+                IpcResponse::ok(request.request_id.clone(), payload).ok()
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "reverse-image request failed");
+                Some(
+                    IpcResponse::error(request.request_id.clone(), e.to_string())
+                        .with_status(ResponseStatus::Error),
+                )
+            }
+            Err(e) => Some(IpcResponse::error(
+                request.request_id.clone(),
+                format!("reverse-image task panicked: {e}"),
+            )),
+        };
+        resp.unwrap_or_else(|| {
+            IpcResponse::error(
+                request.request_id.clone(),
+                "reverse-image request failed".to_string(),
+            )
         })
     }
 }

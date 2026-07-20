@@ -26,6 +26,19 @@ pub enum Command {
     /// question. `payload` carries [`AiPayload`]; the response embeds the
     /// model's text in [`AiResponsePayload`].
     Ai,
+    /// u6: build a web-search URL from OCR/selected text. `payload`
+    /// carries [`SearchPayload`]; the response embeds the URL in
+    /// [`SearchResponsePayload`]. No network call is made by the daemon —
+    /// the client opens the URL.
+    Search,
+    /// u6: run a "search by image" flow: optionally upload the capture to
+    /// the configured image host, then build a Google Lens URL. `payload`
+    /// carries [`ReverseImagePayload`]; the response reuses
+    /// [`AiResponsePayload`] for the status string.
+    ReverseImage,
+    /// u6: translate text via the configured model. `payload` carries
+    /// [`TranslatePayload`]; the response reuses [`AiResponsePayload`].
+    Translate,
 }
 
 /// Payload for [`Command::SetPreview`].
@@ -57,6 +70,36 @@ pub struct AiResponsePayload {
     pub text: String,
     /// The model id that produced the reply (echoed from config).
     pub model: String,
+}
+
+/// Payload for [`Command::Search`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchPayload {
+    /// Free text (usually OCR output of a capture) to search for.
+    pub text: String,
+}
+
+/// Response payload for [`Command::Search`] on success.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchResponsePayload {
+    /// The fully-qualified search URL the client should open.
+    pub url: String,
+}
+
+/// Payload for [`Command::ReverseImage`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReverseImagePayload {
+    /// Absolute path to the captured image to search by image.
+    pub image_path: String,
+}
+
+/// Payload for [`Command::Translate`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranslatePayload {
+    /// Text to translate (usually OCR output of a capture).
+    pub text: String,
+    /// Target language name or code, e.g. "Spanish" or "fr".
+    pub target_lang: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,5 +313,49 @@ mod tests {
         assert_eq!(resp.status, ResponseStatus::Ok);
         assert_eq!(resp.payload["text"], "42");
         assert_eq!(resp.payload["model"], "llava");
+    }
+
+    #[test]
+    fn u6_search_and_translate_round_trip() {
+        for (cmd, json) in [
+            (Command::Search, "\"search\""),
+            (Command::ReverseImage, "\"reverseimage\""),
+            (Command::Translate, "\"translate\""),
+        ] {
+            let s = serde_json::to_string(&cmd).unwrap();
+            assert_eq!(s, json);
+            let back: Command = serde_json::from_str(json).unwrap();
+            assert_eq!(back, cmd);
+        }
+
+        let sp = SearchPayload {
+            text: "hello world".to_string(),
+        };
+        let spj = serde_json::to_string(&sp).unwrap();
+        assert_eq!(serde_json::from_str::<SearchPayload>(&spj).unwrap(), sp);
+
+        let rp = ReverseImagePayload {
+            image_path: "/tmp/x.png".to_string(),
+        };
+        assert_eq!(
+            serde_json::from_str::<ReverseImagePayload>(&serde_json::to_string(&rp).unwrap())
+                .unwrap(),
+            rp
+        );
+
+        let tp = TranslatePayload {
+            text: "bonjour".to_string(),
+            target_lang: "en".to_string(),
+        };
+        assert_eq!(
+            serde_json::from_str::<TranslatePayload>(&serde_json::to_string(&tp).unwrap()).unwrap(),
+            tp
+        );
+
+        let sresp = SearchResponsePayload {
+            url: "https://www.google.com/search?q=hi".to_string(),
+        };
+        let r = IpcResponse::ok("req-s".to_string(), &sresp).unwrap();
+        assert_eq!(r.payload["url"], "https://www.google.com/search?q=hi");
     }
 }
