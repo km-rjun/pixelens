@@ -33,6 +33,16 @@ pub const KNOWN_KEYS: &[&str] = &[
     "general.hotkey",
     "capture.show_preview",
     "ocr.engine",
+    "ocr.language",
+    "ai.endpoint",
+    "ai.api_key",
+    "ai.model",
+    "ai.menu_backend",
+    "ai.require_key",
+    "search.provider",
+    "upload.endpoint",
+    "upload.provider",
+    "reverse_image.provider",
 ];
 
 /// Resolve the default config path: `~/.config/pixelens/config.toml`.
@@ -98,6 +108,16 @@ pub fn get_value(cfg: &Config, key: &str) -> Result<String, ConfigError> {
         "general.hotkey" => Ok(cfg.general.hotkey.clone()),
         "capture.show_preview" => Ok(cfg.capture.show_preview.to_string()),
         "ocr.engine" => Ok(cfg.ocr.engine.clone()),
+        "ocr.language" => Ok(cfg.ocr.language.clone()),
+        "ai.endpoint" => Ok(cfg.ai.endpoint.clone()),
+        "ai.api_key" => Ok(cfg.ai.api_key.clone()),
+        "ai.model" => Ok(cfg.ai.model.clone()),
+        "ai.menu_backend" => Ok(cfg.ai.menu_backend.clone()),
+        "ai.require_key" => Ok(cfg.ai.require_key.to_string()),
+        "search.provider" => Ok(cfg.search.provider.clone()),
+        "upload.endpoint" => Ok(cfg.upload.endpoint.clone()),
+        "upload.provider" => Ok(cfg.upload.provider.clone()),
+        "reverse_image.provider" => Ok(cfg.reverse_image.provider.clone()),
         other => Err(ConfigError::UnknownKey(other.to_string())),
     }
 }
@@ -119,6 +139,36 @@ pub fn set_value(cfg: &mut Config, key: &str, value: &str) -> Result<(), ConfigE
         }
         "ocr.engine" => {
             cfg.ocr.engine = value.to_string();
+        }
+        "ocr.language" => {
+            cfg.ocr.language = value.to_string();
+        }
+        "ai.endpoint" => {
+            cfg.ai.endpoint = value.to_string();
+        }
+        "ai.api_key" => {
+            cfg.ai.api_key = value.to_string();
+        }
+        "ai.model" => {
+            cfg.ai.model = value.to_string();
+        }
+        "ai.menu_backend" => {
+            cfg.ai.menu_backend = value.to_string();
+        }
+        "ai.require_key" => {
+            cfg.ai.require_key = parse_bool(key, value)?;
+        }
+        "search.provider" => {
+            cfg.search.provider = value.to_string();
+        }
+        "upload.endpoint" => {
+            cfg.upload.endpoint = value.to_string();
+        }
+        "upload.provider" => {
+            cfg.upload.provider = value.to_string();
+        }
+        "reverse_image.provider" => {
+            cfg.reverse_image.provider = value.to_string();
         }
         other => return Err(ConfigError::UnknownKey(other.to_string())),
     }
@@ -154,6 +204,16 @@ mod tests {
         assert_eq!(cfg.general.hotkey, "Super+Shift+T");
         assert!(!cfg.capture.show_preview);
         assert_eq!(cfg.ocr.engine, "tesseract");
+        assert_eq!(cfg.ocr.language, "eng");
+        assert_eq!(cfg.ai.endpoint, "http://10.0.0.1:11434/v1");
+        assert_eq!(cfg.ai.api_key, "");
+        assert_eq!(cfg.ai.model, "llava");
+        assert_eq!(cfg.ai.menu_backend, "fuzzel");
+        assert!(!cfg.ai.require_key);
+        assert_eq!(cfg.search.provider, "google_lens");
+        assert_eq!(cfg.upload.endpoint, "");
+        assert_eq!(cfg.upload.provider, "zeroxzero");
+        assert_eq!(cfg.reverse_image.provider, "google_lens");
     }
 
     #[test]
@@ -177,15 +237,37 @@ mod tests {
     }
 
     #[test]
-    fn get_and_set_dotted_keys() {
+    fn ai_search_upload_keys_round_trip() {
+        let path = temp_path("ai");
         let mut cfg = Config::default();
-        assert_eq!(get_value(&cfg, "general.hotkey").unwrap(), "Super+Shift+T");
-        set_value(&mut cfg, "general.hotkey", "Super+Shift+S").unwrap();
-        assert_eq!(get_value(&cfg, "general.hotkey").unwrap(), "Super+Shift+S");
-        // unknown key errors
-        assert!(get_value(&cfg, "nope.nope").is_err());
-        assert!(set_value(&mut cfg, "nope.nope", "x").is_err());
-        // bad bool errors
-        assert!(set_value(&mut cfg, "capture.show_preview", "maybe").is_err());
+        set_value(&mut cfg, "ai.endpoint", "https://api.example/v1").unwrap();
+        set_value(&mut cfg, "ai.model", "gpt-4o").unwrap();
+        set_value(&mut cfg, "ai.menu_backend", "wofi").unwrap();
+        set_value(&mut cfg, "ai.require_key", "true").unwrap();
+        set_value(&mut cfg, "ocr.language", "spa").unwrap();
+        set_value(&mut cfg, "search.provider", "google_lens").unwrap();
+        set_value(&mut cfg, "reverse_image.provider", "google_lens").unwrap();
+        save_config_to(&path, &cfg).unwrap();
+
+        let loaded = load_config_from(&path).unwrap();
+        assert_eq!(loaded.ai.endpoint, "https://api.example/v1");
+        assert_eq!(loaded.ai.model, "gpt-4o");
+        assert_eq!(loaded.ai.menu_backend, "wofi");
+        assert!(loaded.ai.require_key);
+        assert_eq!(loaded.ocr.language, "spa");
+        assert_eq!(loaded.search.provider, "google_lens");
+        assert_eq!(loaded.reverse_image.provider, "google_lens");
+
+        // get_value reflects the same
+        assert_eq!(
+            get_value(&loaded, "ai.endpoint").unwrap(),
+            "https://api.example/v1"
+        );
+        // bad bool still errors
+        assert!(set_value(&mut cfg, "ai.require_key", "maybe").is_err());
+        // unknown key still errors
+        assert!(set_value(&mut cfg, "ai.nope", "x").is_err());
+
+        let _ = std::fs::remove_file(&path);
     }
 }

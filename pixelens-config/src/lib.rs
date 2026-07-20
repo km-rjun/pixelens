@@ -12,4 +12,7 @@ pub use io::{
     config_path, get_value, load_config, load_config_from, save_config, save_config_to, set_value,
     ConfigError, KNOWN_KEYS,
 };
-pub use model::{CaptureConfig, Config, GeneralConfig, OcrConfig};
+pub use model::{
+    AiConfig, CaptureConfig, Config, GeneralConfig, GuiConfig, OcrConfig, ReverseImageConfig,
+    SearchConfig, UploadConfig,
+};
