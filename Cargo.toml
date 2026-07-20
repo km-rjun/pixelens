@@ -32,6 +32,7 @@ pixelens-ocr = { path = "pixelens-ocr" }
 pixelens-capture = { path = "pixelens-capture" }
 pixelens-overlay = { path = "pixelens-overlay" }
 pixelens-notify = { path = "pixelens-notify" }
+pixelens-portal = { path = "pixelens-portal" }
 pixelens-keyhook = { path = "pixelens-keyhook" }
 
 # External dependencies pinned at workspace level

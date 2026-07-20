@@ -33,3 +33,13 @@ pixelens-ipc = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
+
+[features]
+# UM5: enable the xdg-desktop-portal capture backend as the preferred
+# fast-path (transparent slurp/grim fallback inside the backend). Off by
+# default — v1 ships the pure slurp/grim path.
+portal = ["pixelens-capture/portal", "pixelens-portal?/portal", "dep:pixelens-portal"]
+
+[dependencies.pixelens-portal]
+workspace = true
+optional = true

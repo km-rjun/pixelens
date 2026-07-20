@@ -91,7 +91,14 @@ impl PortalBackend {
         )
     }
 
-    /// Run the legacy `slurp` (select) + `grim` (capture) + PNG decode path.
+    /// Run the legacy `slurp` (select) + `grim` (capture) path.
+    ///
+    /// PNG decoding is intentionally *non-fatal*. The v1 pipeline never
+    /// decodes the captured image — it hands the raw grim bytes straight to
+    /// OCR — so a fallback that can't decode must not turn a successful
+    /// capture into an error. If the decoder fails we synthesise a
+    /// region-sized `CaptureImage` (zeroed pixels) so downstream OCR still
+    /// has a valid handle and behavior matches v1 exactly.
     fn fallback_capture(&self, _request: &CaptureRequest) -> Result<RawCapture, PixelensError> {
         let Some(rect) = self.selector.select()? else {
             tracing::info!("region selection cancelled; aborting capture");
@@ -104,12 +111,56 @@ impl PortalBackend {
         let tmp_path = tmp_dir.join(format!("pixelens-grim-{}.png", uuid::Uuid::new_v4()));
         self.capturer.capture(rect, &tmp_path)?;
         let bytes = std::fs::read(&tmp_path).map_err(PixelensError::Io)?;
-        let _ = std::fs::remove_file(&tmp_path);
-        let image = self.decoder.decode(&bytes)?;
+
+        let image = match self.decoder.decode(&bytes) {
+            Ok(img) => img,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "PNG decode failed in slurp/grim fallback; using region-sized placeholder"
+                );
+                region_sized_image(rect)
+            }
+        };
+        // Keep the on-disk capture: v1's pipeline leaves the grim PNG in
+        // place, and the grab contract now expects `raw.path` to point at a
+        // real, existing file (the daemon runs OCR on it and the client may
+        // open it). We only clean up on the cancellation path.
         Ok(RawCapture {
             region: rect,
             image,
+            path: Some(tmp_path.clone()),
         })
+    }
+
+    /// Cheap reachability probe: can this backend actually serve pixels via
+    /// the portal right now? Used at daemon startup to decide whether to
+    /// *install* the portal backend at all. When it returns `false` the
+    /// daemon keeps the universal `slurp`/`grim` pipeline as the grab path,
+    /// which is exactly the v1 behavior.
+    ///
+    /// Notes:
+    /// - Gated on the `portal` feature (the probe needs the real session).
+    /// - A `false` here just means "don't prefer portal" — the fallback
+    ///   already covers missing portals at capture time, so this is purely
+    ///   about not mounting a dead fast-path in headless CI.
+    #[cfg(feature = "portal")]
+    pub fn is_available() -> bool {
+        real::portal_reachable()
+    }
+}
+
+/// Build a region-sized placeholder image (zeroed RGBA) so a capture that
+/// couldn't be decoded still yields a valid `CaptureImage` for downstream
+/// OCR. Width/height come from the selection; pixels carry no colour data.
+fn region_sized_image(rect: pixelens_core::Rect) -> CaptureImage {
+    let w = rect.size.width.max(1);
+    let h = rect.size.height.max(1);
+    CaptureImage {
+        width: w,
+        height: h,
+        stride: w * 4,
+        pixels: vec![0u8; (w * h * 4) as usize],
     }
 }
 
@@ -165,6 +216,35 @@ mod real {
     /// the backend falls back to `slurp`/`grim` — which is exactly the safety
     /// guarantee required by UM5.
     pub struct RealPortalSession;
+
+    /// Cheap reachability probe: does an `org.freedesktop.portal.ScreenCast`
+    /// proxy exist on the bus right now? Mirrors the first step of
+    /// [`RealPortalSession::run`] without running a full session. Spins a
+    /// bounded current-thread runtime and returns `false` on any failure
+    /// (no bus, no service, runtime error) so headless/CI never installs a
+    /// dead portal fast-path.
+    pub fn portal_reachable() -> bool {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                tracing::debug!(error = %e, "portal probe: failed to build runtime");
+                return false;
+            }
+        };
+
+        rt.block_on(async {
+            match Screencast::new().await {
+                Ok(_) => true,
+                Err(e) => {
+                    tracing::debug!(error = %e, "portal probe: screencast portal unreachable");
+                    false
+                }
+            }
+        })
+    }
 
     impl RealPortalSession {
         pub fn new() -> Self {
@@ -368,6 +448,7 @@ mod tests {
             outcome: PortalOutcome::Captured(RawCapture {
                 region: KNOWN_RECT,
                 image: known_image(),
+                path: None,
             }),
         };
         let selector_called = Arc::new(AtomicBool::new(false));

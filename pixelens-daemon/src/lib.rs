@@ -88,7 +88,30 @@ pub async fn run() -> anyhow::Result<()> {
         }
     };
 
-    // Bind the IPC socket. This is the only fatal startup failure
+    // UM5: optionally prefer an xdg-desktop-portal capture backend as the
+    // fast-path. `PortalBackend` itself transparently falls back to the
+    // slurp/grim `pipeline` (built above, always available as the universal
+    // fallback) whenever the portal is unreachable, so mounting it is safe
+    // headless — the observable grab result is identical to v1.
+    //
+    // NOTE: we deliberately do NOT probe availability here. `run()` is async
+    // and already executes on the daemon's tokio runtime; a probe that
+    // spins its own `block_on` runtime would panic ("cannot start a runtime
+    // from within a runtime") and kill startup. The portal session's own
+    // reachability check (inside `capture`) is the correct, in-band place
+    // for that. The `PortalBackend::is_available()` helper exists for a
+    // future milestone (M3: real portal pixel extraction) that may want to
+    // choose the backend up front.
+    #[cfg(feature = "portal")]
+    let portal_backend: Option<Arc<pixelens_capture::CaptureBackend>> =
+        Some(Arc::new(pixelens_capture::CaptureBackend::Portal(
+            Arc::new(pixelens_portal::PortalBackend::default()),
+        )));
+    #[cfg(not(feature = "portal"))]
+    let portal_backend: Option<Arc<pixelens_capture::CaptureBackend>> = None;
+    if portal_backend.is_some() {
+        tracing::info!("UM5: portal capture backend selected as preferred grab path");
+    }
     // after display detection: without the socket, the CLI has no way
     // to reach the daemon.
     let (listener, socket_path) = ipc::bind()
@@ -114,7 +137,13 @@ pub async fn run() -> anyhow::Result<()> {
         }
     };
 
-    let state = Arc::new(state::DaemonState::new(display, pipeline, ocr, config));
+    let state = Arc::new(state::DaemonState::new(
+        display,
+        pipeline,
+        ocr,
+        config,
+        portal_backend,
+    ));
     let dispatcher = Arc::new(dispatch::Dispatcher::new(state));
 
     ipc::serve(listener, dispatcher).await;

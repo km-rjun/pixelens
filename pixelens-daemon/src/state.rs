@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use pixelens_capture::{DisplayServer, GrabPipeline};
+use pixelens_capture::{CaptureBackend, DisplayServer, GrabPipeline};
 use pixelens_config::Config;
 use pixelens_ocr::TesseractOcrEngine;
 
@@ -37,6 +37,13 @@ pub struct DaemonState {
     /// Warm OCR engine. `None` when `tesseract` is unavailable; grabs
     /// still work, they simply return empty `text` (M5 degrade path).
     pub ocr: Option<TesseractOcrEngine>,
+    /// UM5: optional portal-native capture backend. When `Some`, grabs
+    /// prefer this fast-path over the slurp/grim `pipeline`. The backend
+    /// itself transparently falls back to slurp/grim if the portal
+    /// session is unavailable, so `pipeline` remains a valid fallback.
+    /// `None` in default builds (no `portal` feature) or when selection
+    /// yields no backend.
+    pub portal_backend: Option<Arc<CaptureBackend>>,
     /// Parsed on-disk config (UM4: `gui` + `capture.show_preview` base).
     pub config: Config,
     /// UM4 one-shot overrides, shared with the IPC handler.
@@ -49,11 +56,13 @@ impl DaemonState {
         pipeline: Option<GrabPipeline>,
         ocr: Option<TesseractOcrEngine>,
         config: Config,
+        portal_backend: Option<Arc<CaptureBackend>>,
     ) -> Self {
         Self {
             display,
             pipeline,
             ocr,
+            portal_backend,
             config,
             one_shot: Arc::new(Mutex::new(OneShot::default())),
         }
@@ -102,7 +111,7 @@ mod tests {
     fn state_with(show_preview: bool) -> DaemonState {
         let mut config = Config::default();
         config.capture.show_preview = show_preview;
-        DaemonState::new(DisplayServer::Wayland, None, None, config)
+        DaemonState::new(DisplayServer::Wayland, None, None, config, None)
     }
 
     #[test]

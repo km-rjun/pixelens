@@ -37,6 +37,11 @@ pub enum CaptureBackend {
     X11(Arc<x11::X11CaptureProvider>),
     #[cfg(windows)]
     Windows(Arc<windows::MockWindowsCaptureProvider>),
+    /// UM5: xdg-desktop-portal native backend. Preferred over slurp/grim
+    /// when available; the backend itself transparently falls back to
+    /// slurp/grim if the portal session is unavailable.
+    #[cfg(feature = "portal")]
+    Portal(Arc<dyn CaptureProvider + Send + Sync>),
 }
 
 impl CaptureProvider for CaptureBackend {
@@ -46,6 +51,8 @@ impl CaptureProvider for CaptureBackend {
             CaptureBackend::X11(p) => p.capture(request),
             #[cfg(windows)]
             CaptureBackend::Windows(p) => p.capture(request),
+            #[cfg(feature = "portal")]
+            CaptureBackend::Portal(p) => p.capture(request),
         }
     }
 
@@ -55,6 +62,8 @@ impl CaptureProvider for CaptureBackend {
             CaptureBackend::X11(p) => p.cancel(session_id),
             #[cfg(windows)]
             CaptureBackend::Windows(p) => p.cancel(session_id),
+            #[cfg(feature = "portal")]
+            CaptureBackend::Portal(p) => p.cancel(session_id),
         }
     }
 }

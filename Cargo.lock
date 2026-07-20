@@ -988,6 +988,7 @@ dependencies = [
  "pixelens-notify",
  "pixelens-ocr",
  "pixelens-overlay",
+ "pixelens-portal",
  "serde_json",
  "thiserror",
  "tokio",

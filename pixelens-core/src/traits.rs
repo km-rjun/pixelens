@@ -33,10 +33,19 @@ impl CaptureImage {
 ///
 /// The region is a generic bounding box, not a rectangle, so the
 /// `CaptureProvider` trait does not assume v1's rectangle-only selection.
+///
+/// `path` is the on-disk capture file when one exists (the slurp/grim
+/// fallback, and any backend that shells out to a file-based capturer, write
+/// a PNG). A backend that returns in-memory pixels only (e.g. a future
+/// pipewire portal path) leaves this `None` — callers that need a file must
+/// fall back to a synthetic identifier. v1's universal pipeline always sets
+/// this.
 #[derive(Debug, Clone)]
 pub struct RawCapture {
     pub region: Rect,
     pub image: CaptureImage,
+    /// On-disk capture file, if the backend wrote one.
+    pub path: Option<std::path::PathBuf>,
 }
 
 /// Identifies a single capture session so the daemon can match cancel

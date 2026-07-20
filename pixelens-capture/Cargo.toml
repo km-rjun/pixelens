@@ -13,6 +13,13 @@ pixelens-core = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[features]
+# Gate for the `Portal` capture variant. No deps here — the portal
+# backend is constructed by the daemon (which depends on `pixelens-portal`
+# directly). Kept so dependents can enable it without pulling a cycle
+# (capture must not depend on portal; portal depends on capture).
+portal = []
+
 # Windows backend: WinRT GraphicsCapturePicker + WIC PNG encoder.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
