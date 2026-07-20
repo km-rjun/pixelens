@@ -114,8 +114,10 @@ _Last updated: 2026-07-19 (session: hy3 — plan advance post-UM2; no new code)_
 - UM3 Systemd + autostart — ✅ DONE (2026-07-19); live QA pending (headless).
 - UM4 Grab UI — ✅ backend DONE (2026-07-19); **visual HUD SCRAPPED** (utility
   tool, no HUD/tray/window; same for Windows). See tracking.
-- UM5 Portal-native capture — ⬜ next candidate (not started). Speedup via
-  xdg-desktop-portal behind `portal` feature; transparent slurp+grim fallback.
+- UM5 Portal-native capture — ✅ DONE (2026-07-20); behind `portal` feature
+  flag. `PortalBackend` impls `CaptureProvider`; falls back to slurp+grim
+  transparently (real portal PipeWire capture deferred to portal M3). Native
+  wlroots portal run NOT exercised headless (fallback + mock only).
 - UM6 Multi-display smart selection — ⬜ not started.
 - UM7 On-demand vs continuous mode — ⬜ not started.
 - UM8 Tesseract performance tuning — ⬜ not started.
@@ -169,6 +171,28 @@ and safety gate before GitHub push.
     gui-light). A history/recall feature is also deferred. The backend above
     remains the stable contract if a minimal HUD is ever wanted later. See
     `16-upgrade-m4-grab-ui.md` status block.
+- UM5 Portal-native capture — ✅ DONE (2026-07-20):
+  - `pixelens-portal` crate (optional, `portal` feature): `PortalBackend` impls
+    `CaptureProvider`; `RealPortalSession::run` returns `Unavailable` (PipeWire
+    ScreenCast deferred to portal M3), so capture transparently falls back to
+    slurp+grim. `fallback_capture` keeps the grab file on disk (v1 contract) and
+    decodes non-fatally. `MockPortalSession` drives the 3 crate unit tests.
+  - `pixelens-capture` dep-free `portal` feature → `CaptureBackend::Portal(
+    Arc<dyn CaptureProvider + Send + Sync>)` variant.
+  - `pixelens-core` `RawCapture` gained `path: Option<PathBuf>`.
+  - `pixelens-daemon`: optional `pixelens-portal` dep + `portal` feature;
+    `portal_backend: Option<Arc<dyn CaptureProvider>>` built under
+    `#[cfg(feature = "portal")]` via `PortalBackend::default()` (NO startup
+    `block_on` → no nested-runtime panic in tokio). Dispatch uses `raw.path`
+    when present, else synthesizes `portal://`.
+  - `is_available()`/`portal_reachable()` present but NOT called at startup
+    (nested-runtime guard). public lib items; clippy clean.
+  - QA: fmt + clippy `--all-targets -D warnings` clean (default + portal);
+    daemon 4/4 default + 4/4 portal (incl. line-170 file-exists); portal crate
+    3/3; `cargo check --target x86_64-pc-windows-msvc` clean for capture.
+    Native portal run NOT exercised headless. Verified via
+    WORKER→TESTER→VERIFIER→REVIEWER loop; REVIEWER caught 2 WORKER-missed test
+    failures (startup probe hang, synthetic-path) — fixed by main agent.
 - Config keys `autostart` / `theme` / `gui.*`: `autostart` IS consumed (UM3).
   `gui.hud_enabled` + `gui.hud_timeout_ms` are parsed/validated (defaults
   true/1500) but only *used* if a HUD is ever built (it is scrapped for now).
@@ -186,13 +210,20 @@ green on Linux; `cargo check --target x86_64-pc-windows-msvc` zero warnings).
 HUD/tray/window; same for Windows release). History/recall deferred. README
 rewritten + Windows section added.
 
-**Next code candidate: UM5 (portal-native capture)** — xdg-desktop-portal
-behind a `portal` feature flag with transparent slurp+grim fallback; targets
-the PRD <2s goal (~300-400ms faster on some compositors). Not started.
-Outstanding headless-blocked QA (native Windows run of UM2 loop; live UM1/UM3
-desktop QA) remains documented, not compromised.
+**UM5 portal-native capture ✅ DONE (2026-07-20)** behind the `portal` feature
+flag (commit pushed to `origin/features/core-loop`; `origin/main` untouched).
+`PortalBackend` impls `CaptureProvider`, transparently falls back to slurp+grim;
+real PipeWire ScreenCast deferred to portal M3. Native wlroots portal run is
+headless-blocked (fallback + mock only). See UM5 tracking above + changelog +
+`13-roadmap-upgrades.md`.
 
-_Last updated: 2026-07-19 (session: hy3 — plan advance post-UM2; no new code)._
+**Next code candidate: UM6 (multi-display smart selection)** — detect cursor
+monitor, scope slurp to that output via `slurp -g <output>`; needs
+`wayland-protocols` cursor-seat queries. Not started.
+Outstanding headless-blocked QA (native Windows run of UM2 loop; live UM1/UM3
+desktop QA; native portal run) remains documented, not compromised.
+
+_Last updated: 2026-07-20 (session: hy3 — UM5 portal-native capture shipped)._
 
 ## Habits to keep
 - After EVERY change: commit small + descriptive.

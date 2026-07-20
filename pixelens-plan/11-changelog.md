@@ -382,3 +382,55 @@ unrelated changes in one entry.
 - **QA:** n/a (docs only). Prior UM2 gates remain green (fmt/clippy/test/
   windows-msvc-check) — re-affirmed by a fresh ad-hoc run this session.
 - Next: UM5 implementation (deferred pending user go-ahead)..
+
+---
+
+2026-07-20 | session `hy3` (UM5 — Portal-native capture, subagent loop um5-1..um5-6)
+- **Implemented UM5 portal-native capture** behind the `portal` feature flag
+  via the WORKER→TESTER→VERIFIER→REVIEWER loop:
+  - New `pixelens-portal` crate (optional dep, `portal` feature): `PortalBackend`
+    implements `CaptureProvider` (`capture`/`cancel`). `RealPortalSession::run`
+    currently returns `Unavailable` (PipeWire ScreenCast deferred to portal M3),
+    so capture transparently falls back to slurp+grim. `fallback_capture` decodes
+    grim PNG non-fatally (uses `region_sized_image` on decode error) and KEEPS the
+    grab file on disk per v1 contract. A `MockPortalSession` drives tests.
+  - `pixelens-capture`: dep-free `portal` feature enabling
+    `CaptureBackend::Portal(Arc<dyn CaptureProvider + Send + Sync>)`. Capture must
+    not depend on portal (portal depends on capture) — no cycle.
+  - `pixelens-core`: `RawCapture` gained `path: Option<PathBuf>` so a capture may
+    carry its on-disk file (portal real-pixels None → path Some; mock → None).
+  - Daemon (`pixelens-daemon`): optional `pixelens-portal` dep + `portal` feature
+    (`pixelens-capture/portal` + `pixelens-portal?/portal` + `dep:pixelens-portal`).
+    Builds `portal_backend: Option<Arc<dyn CaptureProvider>>` under
+    `#[cfg(feature = "portal")]` with `PortalBackend::default()` — NO startup
+    `block_on` (was the original line-98 test failure: headless DBus probe hung).
+    Dispatch uses `raw.path` when present, else synthesizes `portal://`.
+  - `is_available()`/`portal_reachable()` present but intentionally NOT called at
+    startup (avoids nested-runtime panic in tokio context); public lib item, no
+    `dead_code` fire (clippy clean confirmed).
+- **WORKER self-report was wrong again**: it claimed clippy-clean but left the
+  original line-98 (startup probe) + line-170 (synthetic `portal://` path) test
+  failures. REVIEWER caught both against real repo state; main agent fixed:
+  (1) `portal_backend = None` at startup (no probe), (2) `RawCapture.path`
+  threading through dispatch, (3) fallback keeps the grim file (`tmp_path`,
+  removed `remove_file`). Same lesson as UM2 — never trust subagent "clean".
+- **QA (real, run by main agent):**
+  - `cargo fmt --all -- --check` → exit 0 (after `cargo fmt --all` cosmetic).
+  - `cargo clippy -p pixelens-daemon -p pixelens-portal -p pixelens-core
+    -p pixelens-capture --all-targets -- -D warnings` → exit 0 (default).
+  - Same with `--features portal` → exit 0.
+  - `cargo test -p pixelens-daemon` (default) → 4 passed.
+  - `cargo test -p pixelens-daemon --features portal` → 4 passed (incl. the
+    previously-failing `grab_captured_end_to_end` file-exists assertion, line 170).
+  - `cargo test -p pixelens-portal --features portal` → 3 passed (mock/cancel/
+    fallback).
+  - `cargo check --target x86_64-pc-windows-msvc -p pixelens-capture` → clean.
+    (Daemon win-msvc link pre-fails on `tokio` unix-only `UnixListener` — NOT a
+    UM5 regression; pre-existing.)
+- **NOT verified (environment limit):** native portal capture needs a real
+  wlroots/Wayland session + DBus + pipewire — headless VM blocks it. Only the
+  fallback path + mock are exercised. v1 slurp/grim path byte-unchanged when
+  `portal` feature is off.
+- Commit: `feat(um5): portal-native capture` → **PUSHED** to
+  `origin/features/core-loop` (fast-forward; `origin/main` untouched — unrelated
+  history, no force-push).

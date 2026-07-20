@@ -119,6 +119,27 @@ leaving the keyboard. Still no menus/confirmations.
 - Portal path unit-tested with mock portal responses
 - Full workspace build + test on clean checkout
 
+**Status (2026-07-20)**: ✅ implemented behind `portal` feature flag.
+- New `pixelens-portal` crate (optional, behind `portal` feature). `PortalBackend`
+  implements `CaptureProvider`; `capture()` returns the portal outcome directly,
+  maps `Cancelled` → `CaptureError::Selector`, and transparently falls back to
+  slurp+grim on `Unavailable`/error (non-fatal on decode).
+- `pixelens-capture` gains a dep-free `portal` feature enabling the
+  `CaptureBackend::Portal(Arc<dyn CaptureProvider + Send + Sync>)` variant.
+- Daemon wires `portal_backend` under `#[cfg(feature = "portal")]`
+  (`PortalBackend::default()`, no startup `block_on` — no nested-runtime panic).
+  Dispatch uses `RawCapture.path` when present (real grim fallback file kept on
+  disk), else synthesizes a `portal://` identifier.
+- `RawCapture` (in `pixelens-core`) gained `path: Option<PathBuf>` so a capture
+  may carry its on-disk file.
+- **Real-portal capture (PipeWire ScreenCast) deferred to M3 of portal work** —
+  `RealPortalSession::run` currently returns `Unavailable` (falls through to the
+  slurp/grim fallback), so v1 behavior is preserved until pipewire wiring lands.
+- QA: fmt + clippy `--all-targets -D warnings` clean (default + portal);
+  daemon tests 4/4 (default) + 4/4 (portal); portal crate unit 3/3 (mock/
+  cancel/fallback); `cargo check --target x86_64-pc-windows-msvc` clean for
+  `pixelens-capture`. Native portal run (wlroots) NOT exercised headless.
+
 ---
 
 ## Upgrade M6 — Multi-display smart selection
