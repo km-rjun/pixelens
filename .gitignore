@@ -18,6 +18,10 @@ Thumbs.db
 build/
 release/
 
+# Packaging build outputs (populated by packaging/build-deb.sh)
+packaging/deb/usr/bin/
+target/debian/
+
 # OS noise
 *~
 *.swp

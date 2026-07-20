@@ -1,0 +1,22 @@
+.TH PIXELENSD 1 "2026-07-20" "pixelens 0.1.0" "System Commands"
+.SH NAME
+pixelensd \- Pixelens background daemon
+.SH SYNOPSIS
+.B pixelensd
+.SH DESCRIPTION
+.B pixelensd
+is the background daemon for Pixelens. It owns the global hotkey, performs
+screen capture (slurp/grim or xdg-desktop-portal), runs OCR (tesseract),
+dispatches to AI/search/upload, and drives the action menu. The CLI
+.B pixelens
+talks to it over a local IPC socket.
+.PP
+The daemon is shipped as a systemd user service
+.I pixelensd.service
+but is NOT enabled automatically. Enable it with:
+.PP
+systemctl --user enable --now pixelensd.service
+.SH SEE ALSO
+.BR pixelens (1)
+.SH AUTHOR
+km-rjun
