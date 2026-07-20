@@ -35,6 +35,26 @@ struct ResponseMessage {
     content: String,
 }
 
+/// Native Ollama `/api/chat` request shape (only the fields we use).
+#[derive(Serialize)]
+struct OllamaNativeRequest {
+    model: String,
+    messages: Vec<OllamaNativeMessage>,
+    stream: bool,
+}
+
+#[derive(Serialize)]
+struct OllamaNativeMessage {
+    role: String,
+    content: String,
+    images: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct OllamaNativeResponse {
+    message: ResponseMessage,
+}
+
 const MAX_RETRIES: u32 = 3;
 const BASE_DELAY_MS: u64 = 1000;
 
@@ -56,17 +76,31 @@ const VISION_MODELS: &[&str] = &[
 /// `endpoint` is consulted so local Ollama hosts (where any pulled model may be
 /// vision-capable) relax the named allowlist, while remote providers keep the
 /// explicit list (so a text-only model like `gpt-3.5-turbo` is never sent an image).
+/// Whether `endpoint` points at a local Ollama server.
+///
+/// Ollama's OpenAI-compatible `/v1/chat/completions` image path is broken on
+/// many builds (it returns 400 "Failed to load image"), while the native
+/// `/api/chat` `images` field works. When this returns true we route vision
+/// requests through the native API instead.
+pub fn is_local_ollama(endpoint: &str) -> bool {
+    endpoint.contains(":11434")
+        || endpoint.contains("localhost")
+        || endpoint.contains("127.0.0.1")
+        || endpoint.contains("0.0.0.0")
+}
+
+/// Whether a model name refers to a vision-capable model.
+///
+/// `endpoint` is consulted so local Ollama hosts (where any pulled model may be
+/// vision-capable) relax the named allowlist, while remote providers keep the
+/// explicit list (so a text-only model like `gpt-3.5-turbo` is never sent an image).
 pub fn model_supports_vision(model: &str, endpoint: &str) -> bool {
     let lower = model.to_lowercase();
     let named = VISION_MODELS.iter().any(|m| lower.contains(m));
     // Local Ollama hosts relax the allowlist: any pulled model may be vision-capable,
     // while remote providers keep the explicit list (so text-only models like
     // `gpt-3.5-turbo` are never sent an image).
-    let local_ollama = endpoint.contains(":11434")
-        || endpoint.contains("localhost")
-        || endpoint.contains("127.0.0.1")
-        || endpoint.contains("0.0.0.0");
-    named || local_ollama
+    named || is_local_ollama(endpoint)
 }
 
 /// OpenAI-compatible chat client. `chat()` is **synchronous** (uses
@@ -114,6 +148,13 @@ impl OpenAiClient {
         Ok(())
     }
 
+    /// Read an image file and return it as standard base64 (no `data:` prefix).
+    fn encode_image_base64(path: &str) -> Result<String, AiError> {
+        let image_data = fs::read(path)
+            .map_err(|e| AiError::RequestFailed(format!("read image {}: {}", path, e)))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&image_data))
+    }
+
     fn build_request(&self, request: &AiRequest) -> Result<ChatRequest, AiError> {
         let mut content = serde_json::Value::Array(vec![]);
 
@@ -124,8 +165,8 @@ impl OpenAiClient {
                     self.model
                 )));
             }
-            if let Ok(image_data) = fs::read(path) {
-                let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            if fs::read(path).is_ok() {
+                let base64_image = Self::encode_image_base64(path)?;
                 let image_content = serde_json::json!({
                     "type": "image_url",
                     "image_url": {
@@ -229,9 +270,84 @@ impl OpenAiClient {
         Ok(body)
     }
 
+    /// POST to the native Ollama `/api/chat` endpoint with base64 images.
+    ///
+    /// Ollama's OpenAI-compatible `/v1/chat/completions` image path is broken on
+    /// many builds (returns 400 "Failed to load image"), but the native API's
+    /// `images` field works. We only call this for local Ollama hosts.
+    fn do_ollama_native(&self, request: &AiRequest, base64_image: &str) -> Result<String, AiError> {
+        // Endpoint may be `http://host:11434/v1` or `http://host:11434`.
+        let base = self
+            .endpoint
+            .trim_end_matches('/')
+            .trim_end_matches("/v1")
+            .trim_end_matches('/');
+        let url = format!("{}/api/chat", base);
+
+        let native = OllamaNativeRequest {
+            model: self.model.clone(),
+            stream: false,
+            messages: vec![OllamaNativeMessage {
+                role: "user".to_string(),
+                content: request.prompt.clone(),
+                images: vec![base64_image.to_string()],
+            }],
+        };
+
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&native)
+            .send()
+            .map_err(|e| AiError::RequestFailed(format!("{}", e)))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .map_err(|e| AiError::RequestFailed(format!("Read response: {}", e)))?;
+
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(AiError::RateLimited {
+                kind: RateLimitKind::Temporary {
+                    retry_after_secs: None,
+                },
+            });
+        }
+        if !status.is_success() {
+            return Err(AiError::RequestFailed(format!(
+                "ollama native api returned HTTP {}: {}",
+                status, body
+            )));
+        }
+
+        let parsed: OllamaNativeResponse =
+            serde_json::from_str(&body).map_err(|e| AiError::InvalidResponse(format!("{}", e)))?;
+        Ok(parsed.message.content)
+    }
+
     /// Send a chat completion request with bounded retries on 429s.
     pub fn chat(&self, request: &AiRequest) -> Result<AiResponse, AiError> {
         self.validate_api_key()?;
+
+        // Local Ollama's OpenAI-compatible image path is broken; route vision
+        // requests through the native `/api/chat` `images` field instead.
+        if is_local_ollama(&self.endpoint) {
+            if let Some(ref path) = request.image_path {
+                if !model_supports_vision(&self.model, &self.endpoint) {
+                    return Err(AiError::RequestFailed(format!(
+                        "Model '{}' does not support image input. Use a vision-capable model like qwen2.5-vl or llava",
+                        self.model
+                    )));
+                }
+                let base64_image = Self::encode_image_base64(path)?;
+                let content = self.do_ollama_native(request, &base64_image)?;
+                return Ok(AiResponse {
+                    content,
+                    model: self.model.clone(),
+                });
+            }
+        }
 
         let chat_request = self.build_request(request)?;
         let mut attempts = 0;
@@ -496,8 +612,8 @@ mod tests {
     fn test_live_ollama_chat() {
         let endpoint = std::env::var("PIXELENS_LIVE_AI_ENDPOINT")
             .unwrap_or_else(|_| "http://10.0.0.88:11434/v1".to_string());
-        let model = std::env::var("PIXELENS_LIVE_AI_MODEL")
-            .unwrap_or_else(|_| "hermes-qwen3:latest".to_string());
+        let model =
+            std::env::var("PIXELENS_LIVE_AI_MODEL").unwrap_or_else(|_| "qwen3.5:9b".to_string());
         // require_key=false: local Ollama/llava tolerates an empty key.
         let client = OpenAiClient::new(&endpoint, "", &model, false);
         let request = AiRequest {
@@ -516,5 +632,44 @@ mod tests {
             "live Ollama returned empty content"
         );
         println!("LIVE_AI_MODEL={} RESPONSE={:?}", model, resp.content);
+    }
+
+    /// Live vision check: sends a real PNG to a vision-capable model and expects
+    /// non-empty content back. Ignored by default. Run manually:
+    ///   PIXELENS_LIVE_AI_ENDPOINT=http://10.0.0.88:11434/v1 \
+    ///   PIXELENS_LIVE_AI_MODEL=hermes-qwen3:latest \
+    ///   cargo test -p pixelens-ai -- --ignored test_live_ollama_vision
+    #[test]
+    #[ignore]
+    fn test_live_ollama_vision() {
+        let endpoint = std::env::var("PIXELENS_LIVE_AI_ENDPOINT")
+            .unwrap_or_else(|_| "http://10.0.0.88:11434/v1".to_string());
+        let model =
+            std::env::var("PIXELENS_LIVE_AI_MODEL").unwrap_or_else(|_| "qwen3.5:9b".to_string());
+        let client = OpenAiClient::new(&endpoint, "", &model, false);
+        // 4x4 red PNG (valid; Ollama's loader rejects 1x1).
+        let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x0F8jngAAAABJRU5ErkJggg==";
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(png_b64)
+            .expect("valid base64 png");
+        let tmp = std::env::temp_dir().join("pixelens_live_vision.png");
+        std::fs::write(&tmp, &png).expect("write temp png");
+        let request = AiRequest {
+            prompt: "What color is this image? Reply in one word.".to_string(),
+            image_path: Some(tmp.to_string_lossy().to_string()),
+        };
+        let result = client.chat(&request);
+        let _ = std::fs::remove_file(&tmp);
+        assert!(
+            result.is_ok(),
+            "live Ollama vision call failed: {:?}",
+            result.err()
+        );
+        let resp = result.unwrap();
+        assert!(
+            !resp.content.trim().is_empty(),
+            "live Ollama vision returned empty content"
+        );
+        println!("LIVE_VISION_MODEL={} RESPONSE={:?}", model, resp.content);
     }
 }
