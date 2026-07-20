@@ -1,0 +1,27 @@
+[package]
+name = "pixelens-menu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Action-bar menu backends (stdin/fuzzel/wofi/GTK) for Pixelens (Strategy C port)"
+
+[features]
+# GTK4 + layer-shell graphical action bar. Off by default so the crate builds
+# headless. Enable with --features menu-gtk when gtk4 + gtk-layer-shell are
+# available on the target.
+default = []
+menu-gtk = ["dep:gtk4", "dep:gtk-layer-shell"]
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+pixelens-ipc.workspace = true
+
+# Optional GUI backend (gated behind `menu-gtk`).
+gtk4 = { version = "0.9", optional = true }
+gtk-layer-shell = { version = "0.6", optional = true }
+
+[dev-dependencies]
