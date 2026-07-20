@@ -45,6 +45,6 @@ pub use codec::{
     FrameError, IpcStream, MAX_FRAME_SIZE,
 };
 pub use protocol::{
-    Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest, IpcResponse, RequestId,
-    ResponseStatus, SetPreviewPayload, CANCEL_COMMAND,
+    AiPayload, AiResponsePayload, Command, GrabRegion, GrabResponsePayload, IpcError, IpcRequest,
+    IpcResponse, RequestId, ResponseStatus, SetPreviewPayload, CANCEL_COMMAND,
 };

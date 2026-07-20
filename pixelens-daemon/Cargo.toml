@@ -17,6 +17,7 @@ pixelens-core = { workspace = true }
 pixelens-capture = { workspace = true }
 pixelens-config = { workspace = true }
 pixelens-ipc = { workspace = true }
+pixelens-ai = { workspace = true }
 pixelens-notify = { workspace = true }
 pixelens-ocr = { workspace = true }
 pixelens-overlay = { workspace = true }

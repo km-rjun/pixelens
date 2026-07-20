@@ -22,6 +22,10 @@ pub enum Command {
     /// UM4: one-shot preview override for the *next* grab only. `payload`
     /// carries the boolean; subsequent grabs fall back to config.
     SetPreview,
+    /// u5: ask the configured OpenAI-compatible model (e.g. Ollama) a
+    /// question. `payload` carries [`AiPayload`]; the response embeds the
+    /// model's text in [`AiResponsePayload`].
+    Ai,
 }
 
 /// Payload for [`Command::SetPreview`].
@@ -31,6 +35,28 @@ pub struct SetPreviewPayload {
     /// `false`, suppress it. After one grab the override is cleared and
     /// the daemon reverts to `capture.show_preview` from config.
     pub preview: bool,
+}
+
+/// Payload for [`Command::Ai`].
+///
+/// `prompt` is the user's question (often the OCR text of a capture plus
+/// an instruction). `image_path`, when present, is an absolute path to a
+/// PNG the model may inspect if it supports vision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiPayload {
+    pub prompt: String,
+    /// Optional absolute path to an image for vision-capable models.
+    #[serde(default)]
+    pub image_path: Option<String>,
+}
+
+/// Response payload for [`Command::Ai`] on success.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiResponsePayload {
+    /// The model's reply text.
+    pub text: String,
+    /// The model id that produced the reply (echoed from config).
+    pub model: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,15 +240,35 @@ mod tests {
     }
 
     #[test]
-    fn set_preview_command_and_payload_round_trip() {
-        let json = serde_json::to_string(&Command::SetPreview).unwrap();
-        assert_eq!(json, "\"setpreview\"");
+    fn ai_command_and_payload_round_trip() {
+        let json = serde_json::to_string(&Command::Ai).unwrap();
+        assert_eq!(json, "\"ai\"");
         let back: Command = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, Command::SetPreview);
+        assert_eq!(back, Command::Ai);
 
-        let payload = SetPreviewPayload { preview: true };
+        let payload = AiPayload {
+            prompt: "what is this?".to_string(),
+            image_path: Some("/tmp/x.png".to_string()),
+        };
         let pj = serde_json::to_string(&payload).unwrap();
-        let pback: SetPreviewPayload = serde_json::from_str(&pj).unwrap();
+        let pback: AiPayload = serde_json::from_str(&pj).unwrap();
         assert_eq!(pback, payload);
+
+        // image_path defaults to None when omitted on the wire.
+        let sparse: AiPayload = serde_json::from_str(r#"{"prompt":"hi"}"#).unwrap();
+        assert_eq!(sparse.prompt, "hi");
+        assert!(sparse.image_path.is_none());
+    }
+
+    #[test]
+    fn ai_response_payload_serializes() {
+        let payload = AiResponsePayload {
+            text: "42".to_string(),
+            model: "llava".to_string(),
+        };
+        let resp = IpcResponse::ok("req-9".to_string(), &payload).unwrap();
+        assert_eq!(resp.status, ResponseStatus::Ok);
+        assert_eq!(resp.payload["text"], "42");
+        assert_eq!(resp.payload["model"], "llava");
     }
 }

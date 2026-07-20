@@ -8,12 +8,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use pixelens_ai::{AiRequest, OpenAiClient};
 use pixelens_capture::GrabOutcome;
 use pixelens_core::{
     CaptureError, CaptureImage, CaptureProvider, CaptureRequest, OcrEngine, PixelensError, Rect,
 };
 use pixelens_ipc::{
-    GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus, SetPreviewPayload,
+    AiPayload, AiResponsePayload, GrabResponsePayload, IpcRequest, IpcResponse, ResponseStatus,
+    SetPreviewPayload,
 };
 use pixelens_notify::{NotificationKind, Notifier, NotifySend};
 
@@ -45,6 +47,7 @@ impl Dispatcher {
             Command::Cancel => self.handle_not_implemented(&request, "cancel"),
             Command::Redetect => self.handle_redetect(&request),
             Command::SetPreview => self.handle_set_preview(&request),
+            Command::Ai => self.handle_ai(&request).await,
         }
     }
 
@@ -308,6 +311,62 @@ impl Dispatcher {
         let payload = serde_json::json!({ "preview": payload.preview, "one_shot": true });
         IpcResponse::ok(request.request_id.clone(), payload)
             .unwrap_or_else(|e| IpcResponse::error(request.request_id.clone(), e.to_string()))
+    }
+
+    /// u5: run a prompt through the configured OpenAI-compatible model
+    /// (e.g. Ollama) and return its reply. `chat()` is synchronous
+    /// (reqwest::blocking), so it runs inside `spawn_blocking` to keep
+    /// the async runtime free. Vision models may consume `image_path`.
+    async fn handle_ai(&self, request: &IpcRequest) -> IpcResponse {
+        let payload: AiPayload = match serde_json::from_value(request.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                return IpcResponse::error(
+                    request.request_id.clone(),
+                    format!("invalid ai payload: {e}"),
+                )
+                .with_status(ResponseStatus::Error);
+            }
+        };
+
+        // Clone the full config so the blocking task owns a 'static value.
+        let cfg = self.state.config.clone();
+        let prompt = payload.prompt.clone();
+        let image_path = payload.image_path.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            let client = OpenAiClient::from_config(&cfg);
+            let req = AiRequest {
+                prompt,
+                image_path: image_path.filter(|p| !p.is_empty()),
+            };
+            client.chat(&req)
+        })
+        .await;
+
+        let resp = match result {
+            Ok(Ok(ai)) => {
+                let payload = AiResponsePayload {
+                    text: ai.content,
+                    model: ai.model,
+                };
+                IpcResponse::ok(request.request_id.clone(), payload).ok()
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "ai request failed");
+                Some(
+                    IpcResponse::error(request.request_id.clone(), e.to_string())
+                        .with_status(ResponseStatus::Error),
+                )
+            }
+            Err(e) => Some(IpcResponse::error(
+                request.request_id.clone(),
+                format!("ai task panicked: {e}"),
+            )),
+        };
+        resp.unwrap_or_else(|| {
+            IpcResponse::error(request.request_id.clone(), "ai request failed".to_string())
+        })
     }
 }
 
