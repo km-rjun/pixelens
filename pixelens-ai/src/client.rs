@@ -463,4 +463,36 @@ mod tests {
         assert_eq!(arr.len(), 1, "Should fall back to text only");
         assert_eq!(arr[0]["type"], "text");
     }
+
+    /// Live end-to-end check against a real OpenAI-compatible provider.
+    /// Ignored by default (needs network + a running model host). Run manually:
+    ///   PIXELENS_LIVE_AI_ENDPOINT=http://10.0.0.88:11434/v1 \
+    ///   PIXELENS_LIVE_AI_MODEL=hermes-qwen3:latest \
+    ///   cargo test -p pixelens-ai -- --ignored test_live_ollama_chat
+    #[test]
+    #[ignore]
+    fn test_live_ollama_chat() {
+        let endpoint = std::env::var("PIXELENS_LIVE_AI_ENDPOINT")
+            .unwrap_or_else(|_| "http://10.0.0.88:11434/v1".to_string());
+        let model = std::env::var("PIXELENS_LIVE_AI_MODEL")
+            .unwrap_or_else(|_| "hermes-qwen3:latest".to_string());
+        // require_key=false: local Ollama/llava tolerates an empty key.
+        let client = OpenAiClient::new(&endpoint, "", &model, false);
+        let request = AiRequest {
+            prompt: "Reply with exactly the words: LIVE AI OK".to_string(),
+            image_path: None,
+        };
+        let result = client.chat(&request);
+        assert!(
+            result.is_ok(),
+            "live Ollama chat failed: {:?}",
+            result.err()
+        );
+        let resp = result.unwrap();
+        assert!(
+            !resp.content.trim().is_empty(),
+            "live Ollama returned empty content"
+        );
+        println!("LIVE_AI_MODEL={} RESPONSE={:?}", model, resp.content);
+    }
 }
