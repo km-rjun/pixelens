@@ -10,11 +10,10 @@ use std::process::ExitCode;
 
 use pixelens_config::{get_value, load_config, save_config, set_value, KNOWN_KEYS};
 use pixelens_ipc::{
-    read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcError, IpcRequest,
-    IpcResponse, ResponseStatus,
+    connect, read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcError,
+    IpcRequest, IpcResponse, ResponseStatus,
 };
 use thiserror::Error;
-use tokio::net::UnixStream;
 use uuid::Uuid;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -401,17 +400,17 @@ fn socket_path() -> Result<PathBuf, CliError> {
     )))
 }
 
-async fn connect() -> Result<UnixStream, CliError> {
-    let path = socket_path()?;
-    match UnixStream::connect(&path).await {
+async fn connect() -> Result<pixelens_ipc::IpcStream, CliError> {
+    match pixelens_ipc::connect().await {
         Ok(s) => Ok(s),
         Err(e)
-            if e.kind() == std::io::ErrorKind::NotFound
-                || e.kind() == std::io::ErrorKind::ConnectionRefused =>
+            if e.to_string().contains("NotFound")
+                || e.to_string().contains("ConnectionRefused")
+                || e.to_string().contains("BrokenPipe") =>
         {
-            Err(CliError::DaemonNotRunning(path))
+            Err(CliError::DaemonNotRunning(socket_path().unwrap_or_else(|_| PathBuf::from("(unknown)"))))
         }
-        Err(e) => Err(CliError::Io(e)),
+        Err(e) => Err(CliError::Frame(e)),
     }
 }
 
