@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
-use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest, IpcStream};
+use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest, windows_pipe_path};
 
 use crate::dispatch::Dispatcher;
 
@@ -75,7 +75,6 @@ fn nix_current_uid() -> Option<u32> {
 pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(unix)]
     {
-        use tokio::net::UnixListener;
         let path = socket_path()?;
 
         // Remove any stale socket file from a previous (crashed) run.
@@ -86,7 +85,7 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
             Err(e) => return Err(ServerError::Bind(e)),
         }
 
-        let listener = UnixListener::bind(&path)?;
+        let listener = tokio::net::UnixListener::bind(&path)?;
         tracing::info!(socket = %path.display(), "ipc listener bound");
         Ok(IpcListener::Unix(listener))
     }
@@ -94,10 +93,9 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(windows)]
     {
         use tokio::net::windows::named_pipe::ServerOptions;
-        use pixelens_ipc::windows_pipe_path;
         let pipe_path = windows_pipe_path();
         let server = ServerOptions::new()
-            .create(pipe_path)
+            .create(&pipe_path)
             .map_err(FrameError::Io)?;
         tracing::info!(pipe = %pipe_path, "ipc named pipe listener bound");
         Ok(IpcListener::Windows(server))
@@ -114,7 +112,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
                     Ok((stream, _addr)) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, dispatcher).await {
+                            if let Err(e) = handle_connection(IpcStream::Unix(stream), dispatcher).await {
                                 tracing::warn!(error = %e, "connection handler exited with error");
                             }
                         });
@@ -135,7 +133,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
                     Ok(stream) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, dispatcher).await {
+                            if let Err(e) = handle_connection(IpcStream::Windows(stream), dispatcher).await {
                                 tracing::warn!(error = %e, "connection handler exited with error");
                             }
                         });
@@ -165,27 +163,15 @@ async fn handle_connection(
     Ok(())
 }
 
-// Cross-platform listener type.
-#[cfg(unix)]
+// Cross-platform listener type. Both variants exist on all platforms for cross-compilation,
+// but only the relevant one is constructed at runtime.
 pub enum IpcListener {
     Unix(tokio::net::UnixListener),
     Windows(tokio::net::windows::named_pipe::NamedPipeServer),
 }
 
-#[cfg(windows)]
-pub enum IpcListener {
-    Unix(tokio::net::UnixListener),
-    Windows(tokio::net::windows::named_pipe::NamedPipeServer),
-}
-
-// Cross-platform stream type.
-#[cfg(unix)]
-pub enum IpcStream {
-    Unix(tokio::net::UnixStream),
-    Windows(tokio::net::windows::named_pipe::NamedPipeClient),
-}
-
-#[cfg(windows)]
+// Cross-platform stream type. Both variants exist on all platforms for cross-compilation,
+// but only the relevant one is constructed at runtime.
 pub enum IpcStream {
     Unix(tokio::net::UnixStream),
     Windows(tokio::net::windows::named_pipe::NamedPipeClient),

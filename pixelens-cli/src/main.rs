@@ -10,8 +10,8 @@ use std::process::ExitCode;
 
 use pixelens_config::{get_value, load_config, save_config, set_value, KNOWN_KEYS};
 use pixelens_ipc::{
-    connect, read_response, write_frame, Command, FrameError, GrabResponsePayload, IpcError,
-    IpcRequest, IpcResponse, ResponseStatus,
+    connect as ipc_connect, read_response, write_frame, Command, FrameError, GrabResponsePayload,
+    IpcError, IpcRequest, IpcResponse, IpcStream, ResponseStatus,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -400,8 +400,8 @@ fn socket_path() -> Result<PathBuf, CliError> {
     )))
 }
 
-async fn connect() -> Result<pixelens_ipc::IpcStream, CliError> {
-    match pixelens_ipc::connect().await {
+async fn connect() -> Result<IpcStream, CliError> {
+    match ipc_connect().await {
         Ok(s) => Ok(s),
         Err(e)
             if e.to_string().contains("NotFound")
