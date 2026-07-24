@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
-use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest, windows_pipe_path};
+use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest};
 
 use crate::dispatch::Dispatcher;
 
@@ -75,6 +75,7 @@ fn nix_current_uid() -> Option<u32> {
 pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(unix)]
     {
+        use tokio::net::UnixListener;
         let path = socket_path()?;
 
         // Remove any stale socket file from a previous (crashed) run.
@@ -85,14 +86,15 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
             Err(e) => return Err(ServerError::Bind(e)),
         }
 
-        let listener = tokio::net::UnixListener::bind(&path)?;
+        let listener = UnixListener::bind(&path)?;
         tracing::info!(socket = %path.display(), "ipc listener bound");
         Ok(IpcListener::Unix(listener))
     }
 
     #[cfg(windows)]
     {
-        use tokio::net::windows::named_pipe::ServerOptions;
+        use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+        use pixelens_ipc::windows_pipe_path;
         let pipe_path = windows_pipe_path();
         let server = ServerOptions::new()
             .create(&pipe_path)
@@ -129,7 +131,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     {
         if let IpcListener::Windows(server) = listener {
             loop {
-                match server.accept().await {
+                match server.connect().await {
                     Ok(stream) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
@@ -163,15 +165,29 @@ async fn handle_connection(
     Ok(())
 }
 
-// Cross-platform listener type. Both variants exist on all platforms for cross-compilation,
-// but only the relevant one is constructed at runtime.
+// Cross-platform listener type - platform-specific variants
+#[cfg(unix)]
 pub enum IpcListener {
+    Unix(tokio::net::UnixListener),
+    // Windows variant exists but won't be constructed on Unix
+    Windows(tokio::net::windows::named_pipe::NamedPipeServer),
+}
+
+#[cfg(windows)]
+pub enum IpcListener {
+    // Unix variant exists but won't be constructed on Windows
     Unix(tokio::net::UnixListener),
     Windows(tokio::net::windows::named_pipe::NamedPipeServer),
 }
 
-// Cross-platform stream type. Both variants exist on all platforms for cross-compilation,
-// but only the relevant one is constructed at runtime.
+// Cross-platform stream type - platform-specific variants
+#[cfg(unix)]
+pub enum IpcStream {
+    Unix(tokio::net::UnixStream),
+    Windows(tokio::net::windows::named_pipe::NamedPipeClient),
+}
+
+#[cfg(windows)]
 pub enum IpcStream {
     Unix(tokio::net::UnixStream),
     Windows(tokio::net::windows::named_pipe::NamedPipeClient),
@@ -185,7 +201,9 @@ impl tokio::io::AsyncRead for IpcStream {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         match &mut *self {
+            #[cfg(unix)]
             IpcStream::Unix(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+            #[cfg(windows)]
             IpcStream::Windows(s) => std::pin::Pin::new(s).poll_read(cx, buf),
         }
     }
@@ -198,7 +216,9 @@ impl tokio::io::AsyncWrite for IpcStream {
         buf: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
         match &mut *self {
+            #[cfg(unix)]
             IpcStream::Unix(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+            #[cfg(windows)]
             IpcStream::Windows(s) => std::pin::Pin::new(s).poll_write(cx, buf),
         }
     }
@@ -208,7 +228,9 @@ impl tokio::io::AsyncWrite for IpcStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         match &mut *self {
+            #[cfg(unix)]
             IpcStream::Unix(s) => std::pin::Pin::new(s).poll_flush(cx),
+            #[cfg(windows)]
             IpcStream::Windows(s) => std::pin::Pin::new(s).poll_flush(cx),
         }
     }
@@ -218,7 +240,9 @@ impl tokio::io::AsyncWrite for IpcStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         match &mut *self {
+            #[cfg(unix)]
             IpcStream::Unix(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+            #[cfg(windows)]
             IpcStream::Windows(s) => std::pin::Pin::new(s).poll_shutdown(cx),
         }
     }
