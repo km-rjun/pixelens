@@ -75,7 +75,6 @@ fn nix_current_uid() -> Option<u32> {
 pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(unix)]
     {
-        use tokio::net::UnixListener;
         let path = socket_path()?;
 
         // Remove any stale socket file from a previous (crashed) run.
@@ -86,7 +85,7 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
             Err(e) => return Err(ServerError::Bind(e)),
         }
 
-        let listener = UnixListener::bind(&path)?;
+        let listener = tokio::net::UnixListener::bind(&path)?;
         tracing::info!(socket = %path.display(), "ipc listener bound");
         Ok(IpcListener::Unix(listener))
     }
@@ -96,7 +95,7 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
         use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
         use pixelens_ipc::windows_pipe_path;
         let pipe_path = windows_pipe_path();
-        let server = ServerOptions::new()
+        let server: NamedPipeServer = ServerOptions::new()
             .create(&pipe_path)
             .map_err(FrameError::Io)?;
         tracing::info!(pipe = %pipe_path, "ipc named pipe listener bound");
@@ -131,7 +130,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     {
         if let IpcListener::Windows(server) = listener {
             loop {
-                match server.connect().await {
+                match server.accept().await {
                     Ok(stream) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
@@ -165,31 +164,25 @@ async fn handle_connection(
     Ok(())
 }
 
-// Cross-platform listener type - platform-specific variants
+// Cross-platform listener type. Each variant is only available on its platform.
 #[cfg(unix)]
 pub enum IpcListener {
     Unix(tokio::net::UnixListener),
-    // Windows variant exists but won't be constructed on Unix
-    Windows(tokio::net::windows::named_pipe::NamedPipeServer),
 }
 
 #[cfg(windows)]
 pub enum IpcListener {
-    // Unix variant exists but won't be constructed on Windows
-    Unix(tokio::net::UnixListener),
     Windows(tokio::net::windows::named_pipe::NamedPipeServer),
 }
 
-// Cross-platform stream type - platform-specific variants
+// Cross-platform stream type. Each variant is only available on its platform.
 #[cfg(unix)]
 pub enum IpcStream {
     Unix(tokio::net::UnixStream),
-    Windows(tokio::net::windows::named_pipe::NamedPipeClient),
 }
 
 #[cfg(windows)]
 pub enum IpcStream {
-    Unix(tokio::net::UnixStream),
     Windows(tokio::net::windows::named_pipe::NamedPipeClient),
 }
 
@@ -200,12 +193,22 @@ impl tokio::io::AsyncRead for IpcStream {
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        match &mut *self {
-            #[cfg(unix)]
-            IpcStream::Unix(s) => std::pin::Pin::new(s).poll_read(cx, buf),
-            #[cfg(windows)]
-            IpcStream::Windows(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+        #[cfg(unix)]
+        {
+            if let IpcStream::Unix(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_read(cx, buf);
+            }
         }
+        #[cfg(windows)]
+        {
+            if let IpcStream::Windows(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_read(cx, buf);
+            }
+        }
+        std::task::Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "no stream variant available",
+        )))
     }
 }
 
@@ -215,36 +218,66 @@ impl tokio::io::AsyncWrite for IpcStream {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        match &mut *self {
-            #[cfg(unix)]
-            IpcStream::Unix(s) => std::pin::Pin::new(s).poll_write(cx, buf),
-            #[cfg(windows)]
-            IpcStream::Windows(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+        #[cfg(unix)]
+        {
+            if let IpcStream::Unix(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_write(cx, buf);
+            }
         }
+        #[cfg(windows)]
+        {
+            if let IpcStream::Windows(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_write(cx, buf);
+            }
+        }
+        std::task::Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "no stream variant available",
+        )))
     }
 
     fn poll_flush(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        match &mut *self {
-            #[cfg(unix)]
-            IpcStream::Unix(s) => std::pin::Pin::new(s).poll_flush(cx),
-            #[cfg(windows)]
-            IpcStream::Windows(s) => std::pin::Pin::new(s).poll_flush(cx),
+        #[cfg(unix)]
+        {
+            if let IpcStream::Unix(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_flush(cx);
+            }
         }
+        #[cfg(windows)]
+        {
+            if let IpcStream::Windows(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_flush(cx);
+            }
+        }
+        std::task::Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "no stream variant available",
+        )))
     }
 
     fn poll_shutdown(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        match &mut *self {
-            #[cfg(unix)]
-            IpcStream::Unix(s) => std::pin::Pin::new(s).poll_shutdown(cx),
-            #[cfg(windows)]
-            IpcStream::Windows(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+        #[cfg(unix)]
+        {
+            if let IpcStream::Unix(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_shutdown(cx);
+            }
         }
+        #[cfg(windows)]
+        {
+            if let IpcStream::Windows(s) = &mut *self {
+                return std::pin::Pin::new(s).poll_shutdown(cx);
+            }
+        }
+        std::task::Poll::Ready(Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "no stream variant available",
+        )))
     }
 }
 
