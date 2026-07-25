@@ -1,17 +1,13 @@
 //! IPC server abstraction over Unix sockets and Windows named pipes.
 //!
-//! On Unix: listens on `$XDG_RUNTIME_DIR/pixelens.sock` (falling back to
-//! `/tmp/pixelens-$UID.sock`). On Windows: listens on the named pipe
-//! `\\.\pipe\pixelens`. Each connection is a single request/response exchange
-//! handled by [`dispatch`]. Connections are short-lived — the daemon does not
-//! hold any per-connection state.
+//! This module wraps the transport-agnostic types from `pixelens_ipc`
+//! and provides the server-side accept loop.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
-use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest};
-
+use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest, windows_pipe_path};
 use crate::dispatch::Dispatcher;
 
 #[derive(Debug, Error)]
@@ -56,11 +52,7 @@ pub fn socket_path() -> Result<PathBuf, ServerError> {
 
 #[cfg(unix)]
 fn nix_current_uid() -> Option<u32> {
-    // We avoid pulling in the `nix` crate for one libc call.
-    extern "C" {
-        fn getuid() -> u32;
-    }
-    // SAFETY: getuid is async-signal-safe and has no preconditions.
+    extern "C" { fn getuid() -> u32; }
     Some(unsafe { getuid() })
 }
 
@@ -69,16 +61,42 @@ fn nix_current_uid() -> Option<u32> {
     None
 }
 
-/// Start the IPC server. Returns once the listener is bound; the
-/// caller spawns the accept loop on a tokio task.
-/// Cross-platform: returns a platform-specific listener wrapped in IpcListener.
+/// Cross-platform listener type that wraps the platform-specific listener.
+/// Uses the same return types as `pixelens_ipc::bind()`.
+pub enum IpcListener {
+    #[cfg(unix)]
+    Unix(tokio::net::UnixListener),
+    #[cfg(windows)]
+    Windows(tokio::net::windows::named_pipe::NamedPipeServer),
+}
+
+impl IpcListener {
+    /// Return a displayable path for logging.
+    pub fn socket_path(&self) -> PathBuf {
+        #[cfg(unix)]
+        {
+            if let IpcListener::Unix(l) = self {
+                return PathBuf::from(l.local_addr().map(|a| a.as_pathname().display().to_string()).unwrap_or("(unknown)".into()));
+            }
+        }
+        #[cfg(windows)]
+        {
+            if let IpcListener::Windows(_) = self {
+                return PathBuf::from(windows_pipe_path());
+            }
+        }
+        PathBuf::from("(unknown)")
+    }
+}
+
+/// Start the IPC server. Returns a bound listener.
+/// Cross-platform: delegates to `pixelens_ipc::bind()`.
 pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(unix)]
     {
         let path = socket_path()?;
 
         // Remove any stale socket file from a previous (crashed) run.
-        // `remove_file` is best-effort: ENOENT is fine.
         match std::fs::remove_file(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -93,7 +111,6 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(windows)]
     {
         use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
-        use pixelens_ipc::windows_pipe_path;
         let pipe_path = windows_pipe_path();
         let server: NamedPipeServer = ServerOptions::new()
             .create(&pipe_path)
@@ -113,7 +130,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
                     Ok((stream, _addr)) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(IpcStream::Unix(stream), dispatcher).await {
+                            if let Err(e) = handle_connection(stream, dispatcher).await {
                                 tracing::warn!(error = %e, "connection handler exited with error");
                             }
                         });
@@ -134,7 +151,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
                     Ok(client) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(IpcStream::Windows(client), dispatcher).await {
+                            if let Err(e) = handle_connection(client, dispatcher).await {
                                 tracing::warn!(error = %e, "connection handler exited with error");
                             }
                         });
@@ -148,10 +165,10 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     }
 }
 
-async fn handle_connection(
-    mut stream: IpcStream,
-    dispatcher: Arc<Dispatcher>,
-) -> Result<(), ServerError> {
+async fn handle_connection<S>(mut stream: S, dispatcher: Arc<Dispatcher>) -> Result<(), ServerError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let request: IpcRequest = read_frame(&mut stream).await?;
     tracing::debug!(
         command = ?request.command,
@@ -163,140 +180,3 @@ async fn handle_connection(
     write_response(&response, &mut stream).await?;
     Ok(())
 }
-
-// Cross-platform listener type. Each variant is only available on its platform.
-#[cfg(unix)]
-pub enum IpcListener {
-    Unix(tokio::net::UnixListener),
-}
-
-#[cfg(windows)]
-pub enum IpcListener {
-    Windows(tokio::net::windows::named_pipe::NamedPipeServer),
-}
-
-impl IpcListener {
-    pub fn socket_path(&self) -> PathBuf {
-        #[cfg(unix)]
-        {
-            if let IpcListener::Unix(listener) = self {
-                listener.local_addr().ok().map(|a| a.as_pathname().unwrap_or_default().into()).unwrap_or_else(|| PathBuf::from("(unknown)"))
-            } else {
-                PathBuf::from("(unknown)")
-            }
-        }
-        #[cfg(windows)]
-        {
-            use pixelens_ipc::windows_pipe_path;
-            PathBuf::from(windows_pipe_path())
-        }
-    }
-}
-
-// Cross-platform stream type. Each variant is only available on its platform.
-#[cfg(unix)]
-pub enum IpcStream {
-    Unix(tokio::net::UnixStream),
-}
-
-#[cfg(windows)]
-pub enum IpcStream {
-    Windows(tokio::net::windows::named_pipe::NamedPipeClient),
-}
-
-// Implement AsyncRead/AsyncWrite for IpcStream to delegate to the inner stream.
-impl tokio::io::AsyncRead for IpcStream {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        #[cfg(unix)]
-        {
-            if let IpcStream::Unix(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_read(cx, buf);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let IpcStream::Windows(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_read(cx, buf);
-            }
-        }
-        std::task::Poll::Ready(Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "no stream variant available",
-        )))
-    }
-}
-
-impl tokio::io::AsyncWrite for IpcStream {
-    fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        #[cfg(unix)]
-        {
-            if let IpcStream::Unix(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_write(cx, buf);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let IpcStream::Windows(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_write(cx, buf);
-            }
-        }
-        std::task::Poll::Ready(Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "no stream variant available",
-        )))
-    }
-
-    fn poll_flush(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        #[cfg(unix)]
-        {
-            if let IpcStream::Unix(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_flush(cx);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let IpcStream::Windows(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_flush(cx);
-            }
-        }
-        std::task::Poll::Ready(Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "no stream variant available",
-        )))
-    }
-
-    fn poll_shutdown(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        #[cfg(unix)]
-        {
-            if let IpcStream::Unix(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_shutdown(cx);
-            }
-        }
-        #[cfg(windows)]
-        {
-            if let IpcStream::Windows(s) = &mut *self {
-                return std::pin::Pin::new(s).poll_shutdown(cx);
-            }
-        }
-        std::task::Poll::Ready(Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "no stream variant available",
-        )))
-    }
-}
-
-impl Unpin for IpcStream {}
