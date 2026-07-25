@@ -131,10 +131,10 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
         if let IpcListener::Windows(server) = listener {
             loop {
                 match server.connect().await {
-                    Ok(stream) => {
+                    Ok(client) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection(IpcStream::Windows(stream), dispatcher).await {
+                            if let Err(e) = handle_connection(IpcStream::Windows(client), dispatcher).await {
                                 tracing::warn!(error = %e, "connection handler exited with error");
                             }
                         });
