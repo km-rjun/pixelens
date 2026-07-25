@@ -289,8 +289,13 @@ mod tests {
 
     /// `which` may fail on systems without slurp/grim installed. Skip
     /// the test rather than failing.
+    #[cfg(unix)]
     fn require_deps() -> bool {
         which("slurp").is_ok() && which("grim").is_ok()
+    }
+    #[cfg(windows)]
+    fn require_deps() -> bool {
+        false // Windows uses different capture pipeline
     }
 
     #[test]
