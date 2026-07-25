@@ -86,6 +86,7 @@ mod tests {
         assert!(matches!(err, WhichError::NotFound(_)));
     }
 
+    #[cfg(unix)]
     #[test]
     fn absolute_path_must_exist_and_be_executable() {
         assert!(which("/bin/sh").is_ok());
