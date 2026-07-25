@@ -147,19 +147,19 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     {
         if let IpcListener::Windows(server) = listener {
             loop {
-                match server.connect().await {
-                    Ok(client) => {
-                        let dispatcher = Arc::clone(&dispatcher);
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_connection(client, dispatcher).await {
-                                tracing::warn!(error = %e, "connection handler exited with error");
-                            }
-                        });
-                    }
+                let client: tokio::net::windows::named_pipe::NamedPipeClient = match server.connect().await {
+                    Ok(c) => c,
                     Err(e) => {
                         tracing::error!(error = %e, "accept failed");
+                        continue;
                     }
-                }
+                };
+                let dispatcher = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_connection(client, dispatcher).await {
+                        tracing::warn!(error = %e, "connection handler exited with error");
+                    }
+                });
             }
         }
     }
