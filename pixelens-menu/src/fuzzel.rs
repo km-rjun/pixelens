@@ -98,6 +98,7 @@ mod tests {
         assert_eq!(parse_selection("  [C] Copy  "), MenuChoice::Copy);
     }
 
+    #[cfg(unix)]
     #[test]
     fn show_menu_reads_shimmed_fuzzel() {
         // Shim `fuzzel` on PATH: echo the requested entry and exit 0.
