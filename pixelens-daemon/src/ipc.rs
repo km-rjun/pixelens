@@ -1,7 +1,10 @@
 //! IPC server abstraction over Unix sockets and Windows named pipes.
 //!
-//! This module wraps the transport-agnostic types from `pixelens_ipc`
-//! and provides the server-side accept loop.
+//! On Unix: listens on `$XDG_RUNTIME_DIR/pixelens.sock` (falling back to
+//! `/tmp/pixelens-$UID.sock`). On Windows: listens on the named pipe
+//! `\\.\pipe\pixelens`. Each connection is a single request/response exchange
+//! handled by [`dispatch`]. Connections are short-lived — the daemon does not
+//! hold any per-connection state.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -62,7 +65,6 @@ fn nix_current_uid() -> Option<u32> {
 }
 
 /// Cross-platform listener type that wraps the platform-specific listener.
-/// Uses the same return types as `pixelens_ipc::bind()`.
 pub enum IpcListener {
     #[cfg(unix)]
     Unix(tokio::net::UnixListener),
@@ -90,7 +92,7 @@ impl IpcListener {
 }
 
 /// Start the IPC server. Returns a bound listener.
-/// Cross-platform: delegates to `pixelens_ipc::bind()`.
+/// Cross-platform: delegates to platform-specific bind.
 pub async fn bind() -> Result<IpcListener, ServerError> {
     #[cfg(unix)]
     {
@@ -145,21 +147,33 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
 
     #[cfg(windows)]
     {
-        if let IpcListener::Windows(server) = listener {
+        if let IpcListener::Windows(mut server) = listener {
             loop {
-                let client: tokio::net::windows::named_pipe::NamedPipeClient = match server.connect().await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!(error = %e, "accept failed");
-                        continue;
-                    }
-                };
+                // Wait for a client to connect. After connect() succeeds,
+                // the server itself implements AsyncRead + AsyncWrite.
+                if let Err(e) = server.connect().await {
+                    tracing::error!(error = %e, "client connect failed");
+                    continue;
+                }
+
+                // Spawn a task to handle this connection using the server as the stream.
                 let dispatcher = Arc::clone(&dispatcher);
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(client, dispatcher).await {
+                    if let Err(e) = handle_connection(server, dispatcher).await {
                         tracing::warn!(error = %e, "connection handler exited with error");
                     }
                 });
+
+                // Create a new server for the next connection
+                use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+                let pipe_path = windows_pipe_path();
+                server = match ServerOptions::new().create(&pipe_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to recreate named pipe server");
+                        break;
+                    }
+                };
             }
         }
     }
