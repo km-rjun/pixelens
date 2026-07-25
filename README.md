@@ -46,6 +46,18 @@ This produces three binaries in `target/release/`:
 - **`pixelens`** — the **CLI** client (talks to the daemon over a Unix socket).
 - **`pixelens-keyhook`** — the **global hotkey listener** (spawned by the daemon/cli).
 
+### Install via `.deb` (Linux)
+
+A self-contained Debian package is published with each release. It installs
+`pixelens`, `pixelensd`, the systemd user unit, and man pages.
+
+```bash
+# Download the latest .deb from GitHub Releases
+sudo dpkg -i pixelens_0.1.0_amd64.deb
+# (The systemd unit is installed but NOT auto-enabled — enable it yourself:
+systemctl --user enable --now pixelensd)
+```
+
 ### First run
 
 ```bash
@@ -202,9 +214,8 @@ key is a single letter/digit).
   backend).
 - **Windows support (UM2):** the full `#[cfg(windows)]` pipeline is wired
   (WinRT capture picker, `RegisterHotKey` listener, named-pipe IPC,
-  `arboard`/WinRT clipboard + notifications) and type-checks against
-  `x86_64-pc-windows-msvc`. A native Windows run to confirm the picker/capture
-  loop end-to-end is still pending.
+  `arboard`/WinRT clipboard + notifications) and **verified on real Windows
+  hardware** — all 111 tests pass on `x86_64-pc-windows-msvc`.
 
 **Deliberately deferred (not bugs — scope decisions):**
 
