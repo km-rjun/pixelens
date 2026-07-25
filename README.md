@@ -87,12 +87,7 @@ This produces `target/x86_64-pc-windows-msvc/release/pixelensd.exe`,
   platform clipboard/notification APIs.
 - **IPC transport** is a named pipe (`\\.\pipe\pixelens`) instead of a Unix
   socket.
-
-> The Windows code is `#[cfg(windows)]`-gated and type-checks against the
-> `x86_64-pc-windows-msvc` target, but it has **not yet been exercised on a real
-> Windows host** (the CI builds are Linux-only). Treat the Windows binary as
-> "compiles + wired" until a native run confirms the picker/capture loop
-> end-to-end.
+- **All tests pass** on Windows (`cargo test --target x86_64-pc-windows-msvc --workspace`).
 
 ---
 
