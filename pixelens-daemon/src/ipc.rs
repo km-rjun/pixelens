@@ -130,7 +130,7 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     {
         if let IpcListener::Windows(server) = listener {
             loop {
-                match server.accept().await {
+                match server.connect().await {
                     Ok(stream) => {
                         let dispatcher = Arc::clone(&dispatcher);
                         tokio::spawn(async move {
@@ -173,6 +173,24 @@ pub enum IpcListener {
 #[cfg(windows)]
 pub enum IpcListener {
     Windows(tokio::net::windows::named_pipe::NamedPipeServer),
+}
+
+impl IpcListener {
+    pub fn socket_path(&self) -> PathBuf {
+        #[cfg(unix)]
+        {
+            if let IpcListener::Unix(listener) = self {
+                listener.local_addr().ok().map(|a| a.as_pathname().unwrap_or_default().into()).unwrap_or_else(|| PathBuf::from("(unknown)"))
+            } else {
+                PathBuf::from("(unknown)")
+            }
+        }
+        #[cfg(windows)]
+        {
+            use pixelens_ipc::windows_pipe_path;
+            PathBuf::from(windows_pipe_path())
+        }
+    }
 }
 
 // Cross-platform stream type. Each variant is only available on its platform.

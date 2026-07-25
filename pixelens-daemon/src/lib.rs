@@ -114,9 +114,11 @@ pub async fn run() -> anyhow::Result<()> {
     }
     // after display detection: without the socket, the CLI has no way
     // to reach the daemon.
-    let (listener, socket_path) = ipc::bind()
+    let listener = ipc::bind()
         .await
         .map_err(|e| anyhow::anyhow!("ipc bind failed: {e}"))?;
+
+    let socket_path = listener.socket_path();
 
     println!("pixelensd {VERSION} listening on {}", socket_path.display());
 
