@@ -83,8 +83,7 @@ impl IpcListener {
         #[cfg(unix)]
         {
             let IpcListener::Unix(l) = self;
-            l
-                .local_addr()
+            l.local_addr()
                 .ok()
                 .and_then(|a| a.as_pathname().map(|p| p.to_path_buf()))
                 .unwrap_or_else(|| PathBuf::from("(unknown)"))
