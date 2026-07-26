@@ -158,11 +158,11 @@ mod tests {
     #[test]
     fn save_to_cache_writes_file() {
         let dir = std::env::temp_dir();
-        let src = dir.join("pixelens_test_src.png");
+        let src = dir.join(format!("pixelens_test_src_{}.png", std::process::id()));
         {
             let mut f = fs::File::create(&src).unwrap();
             f.write_all(b"fake-png-bytes").unwrap();
-        }
+        } // ensure handle is dropped
 
         let cached = save_to_cache(src.to_str().unwrap()).expect("save_to_cache ok");
         assert!(cached.exists(), "cached file should exist");
