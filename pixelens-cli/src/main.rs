@@ -408,7 +408,9 @@ async fn connect() -> Result<IpcStream, CliError> {
                 || e.to_string().contains("ConnectionRefused")
                 || e.to_string().contains("BrokenPipe") =>
         {
-            Err(CliError::DaemonNotRunning(socket_path().unwrap_or_else(|_| PathBuf::from("(unknown)"))))
+            Err(CliError::DaemonNotRunning(
+                socket_path().unwrap_or_else(|_| PathBuf::from("(unknown)")),
+            ))
         }
         Err(e) => Err(CliError::Frame(e)),
     }

@@ -10,8 +10,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 
-use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest, windows_pipe_path};
 use crate::dispatch::Dispatcher;
+#[cfg(windows)]
+use pixelens_ipc::{read_frame, windows_pipe_path, write_response, FrameError, IpcRequest};
+#[cfg(unix)]
+use pixelens_ipc::{read_frame, write_response, FrameError, IpcRequest};
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -55,7 +58,9 @@ pub fn socket_path() -> Result<PathBuf, ServerError> {
 
 #[cfg(unix)]
 fn nix_current_uid() -> Option<u32> {
-    extern "C" { fn getuid() -> u32; }
+    extern "C" {
+        fn getuid() -> u32;
+    }
     Some(unsafe { getuid() })
 }
 
@@ -77,19 +82,19 @@ impl IpcListener {
     pub fn socket_path(&self) -> PathBuf {
         #[cfg(unix)]
         {
-            if let IpcListener::Unix(l) = self {
-                return l.local_addr()
-                    .ok()
-                    .and_then(|a| a.as_pathname().map(|p| p.to_path_buf()))
-                    .unwrap_or_else(|| PathBuf::from("(unknown)"));
-            }
+            let IpcListener::Unix(l) = self;
+            l
+                .local_addr()
+                .ok()
+                .and_then(|a| a.as_pathname().map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| PathBuf::from("(unknown)"))
         }
         #[cfg(windows)]
         {
-            if let IpcListener::Windows(_) = self {
-                return PathBuf::from(windows_pipe_path());
-            }
+            let IpcListener::Windows(_) = self;
+            PathBuf::from(windows_pipe_path())
         }
+        #[cfg(not(any(unix, windows)))]
         PathBuf::from("(unknown)")
     }
 }
@@ -129,20 +134,19 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
 pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     #[cfg(unix)]
     {
-        if let IpcListener::Unix(listener) = listener {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, _addr)) => {
-                        let dispatcher = Arc::clone(&dispatcher);
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_connection(stream, dispatcher).await {
-                                tracing::warn!(error = %e, "connection handler exited with error");
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "accept failed");
-                    }
+        let IpcListener::Unix(listener) = listener;
+        loop {
+            match listener.accept().await {
+                Ok((stream, _addr)) => {
+                    let dispatcher = Arc::clone(&dispatcher);
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_connection(stream, dispatcher).await {
+                            tracing::warn!(error = %e, "connection handler exited with error");
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "accept failed");
                 }
             }
         }
@@ -150,34 +154,33 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
 
     #[cfg(windows)]
     {
-        if let IpcListener::Windows(mut server) = listener {
-            loop {
-                // Wait for a client to connect. After connect() succeeds,
-                // the server itself implements AsyncRead + AsyncWrite.
-                if let Err(e) = server.connect().await {
-                    tracing::error!(error = %e, "client connect failed");
-                    continue;
-                }
-
-                // Spawn a task to handle this connection using the server as the stream.
-                let dispatcher = Arc::clone(&dispatcher);
-                tokio::spawn(async move {
-                    if let Err(e) = handle_connection(server, dispatcher).await {
-                        tracing::warn!(error = %e, "connection handler exited with error");
-                    }
-                });
-
-                // Create a new server for the next connection
-                use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
-                let pipe_path = windows_pipe_path();
-                server = match ServerOptions::new().create(&pipe_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to recreate named pipe server");
-                        break;
-                    }
-                };
+        let IpcListener::Windows(mut server) = listener;
+        loop {
+            // Wait for a client to connect. After connect() succeeds,
+            // the server itself implements AsyncRead + AsyncWrite.
+            if let Err(e) = server.connect().await {
+                tracing::error!(error = %e, "client connect failed");
+                continue;
             }
+
+            // Spawn a task to handle this connection using the server as the stream.
+            let dispatcher = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                if let Err(e) = handle_connection(server, dispatcher).await {
+                    tracing::warn!(error = %e, "connection handler exited with error");
+                }
+            });
+
+            // Create a new server for the next connection
+            use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+            let pipe_path = windows_pipe_path();
+            server = match ServerOptions::new().create(&pipe_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to recreate named pipe server");
+                    break;
+                }
+            };
         }
     }
 }
