@@ -12,3 +12,5 @@ description = "OCR engine abstraction and Tesseract implementation"
 pixelens-core = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tempfile = "3.8"
+bmp = "0.5"

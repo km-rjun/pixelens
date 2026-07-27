@@ -84,6 +84,7 @@ impl GrabPipeline {
             Self::with_selector_and_capturer(
                 crate::windows::region_selector(),
                 crate::windows::screen_capturer(),
+                DisplayServer::X11, // Windows uses X11-like capture path
             )
         }
         #[cfg(unix)]
@@ -103,6 +104,7 @@ impl GrabPipeline {
     /// Custom selector + capturer (used by tests). Skips the upfront
     /// dependency probe; the caller is responsible for ensuring the
     /// underlying tools exist.
+    #[cfg(unix)]
     pub fn with_selector_and_capturer(
         selector: Box<dyn RegionSelector>,
         capturer: Box<dyn ScreenCapturer>,
@@ -113,6 +115,19 @@ impl GrabPipeline {
             capturer,
             output_dir: None,
             display,
+        })
+    }
+
+    #[cfg(windows)]
+    pub fn with_selector_and_capturer(
+        selector: Box<dyn RegionSelector>,
+        capturer: Box<dyn ScreenCapturer>,
+    ) -> Result<Self, GrabError> {
+        Ok(Self {
+            selector,
+            capturer,
+            output_dir: None,
+            display: DisplayServer::Wayland, // dummy value, not used on Windows
         })
     }
 

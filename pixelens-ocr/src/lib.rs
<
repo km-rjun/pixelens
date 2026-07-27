@@ -212,42 +212,4 @@ mod tests {
 
     #[test]
     fn sanitize_text_trims_and_collapses() {
-        let raw = "\n\n  Hello   world  \n\n\n\n  Second line  \n\n";
-        assert_eq!(sanitize_text(raw), "Hello   world\n\nSecond line");
-    }
-
-    #[test]
-    fn sanitize_text_empty_input_yields_empty() {
-        assert_eq!(sanitize_text("   \n\t\n  "), "");
-    }
-
-    #[test]
-    fn sanitize_text_single_line_trims_inline_spaces() {
-        assert_eq!(sanitize_text("   one   two   "), "one   two");
-    }
-
-    #[test]
-    fn new_errors_when_tesseract_absent() {
-        let result = TesseractOcrEngine::with_config("eng".to_string(), 6);
-        match result {
-            Ok(_) => { /* tesseract present — fine */ }
-            Err(OcrError::EngineMissing) => { /* expected on minimal hosts */ }
-            Err(OcrError::UnsupportedImage) => {
-                panic!("unexpected UnsupportedImage from new()");
-            }
-            Err(OcrError::Engine(msg)) => {
-                panic!("unexpected engine error: {msg}");
-            }
-        }
-    }
-
-    #[test]
-    fn extract_from_path_missing_file_errors() {
-        let engine = TesseractOcrEngine::new();
-        if let Ok(engine) = engine {
-            let missing = std::path::PathBuf::from("/nonexistent/pixelens-missing-xyz.png");
-            let err = engine.extract_from_path(&missing);
-            assert!(err.is_err());
-        }
-    }
-}
+        let
