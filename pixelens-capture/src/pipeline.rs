@@ -12,6 +12,8 @@
 //! IPC layer can map them to response statuses cleanly.
 
 use crate::monitor::detect_active_monitor;
+#[cfg(windows)]
+use crate::monitor::detect_active_monitor_windows;
 #[cfg(unix)]
 use crate::slurp_grim::{GrimCapturer, SlurpSelector};
 use crate::slurp_grim::{RegionSelector, ScreenCapturer};
@@ -84,7 +86,6 @@ impl GrabPipeline {
             Self::with_selector_and_capturer(
                 crate::windows::region_selector(),
                 crate::windows::screen_capturer(),
-                DisplayServer::X11, // Windows uses X11-like capture path
             )
         }
         #[cfg(unix)]
@@ -147,7 +148,14 @@ impl GrabPipeline {
     /// 4. Returns the temp file path and selected geometry.
     pub fn run(&self) -> Result<GrabOutcome, GrabError> {
         // Step 0: Detect active monitor for multi-monitor support (UM6)
+        #[cfg(unix)]
         let monitor = detect_active_monitor(self.display).map_err(|e| GrabError {
+            kind: GrabErrorKind::Subprocess,
+            message: format!("monitor detection failed: {e}"),
+        })?;
+
+        #[cfg(windows)]
+        let monitor = detect_active_monitor_windows().map_err(|e| GrabError {
             kind: GrabErrorKind::Subprocess,
             message: format!("monitor detection failed: {e}"),
         })?;

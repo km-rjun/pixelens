@@ -34,6 +34,14 @@ pub fn detect_active_monitor(display: DisplayServer) -> PixelensResult<Option<Mo
     }
 }
 
+/// Detect the output containing the cursor.
+///
+/// Windows: Always returns `Ok(None)` — the WinRT GraphicsCapturePicker
+///          handles multi-monitor natively and doesn't need manual scoping.
+pub fn detect_active_monitor_windows() -> PixelensResult<Option<Monitor>> {
+    Ok(None)
+}
+
 fn detect_wayland_monitor() -> PixelensResult<Option<Monitor>> {
     // Try Hyprland first (common, well-supported)
     if let Ok(Some(m)) = try_hyprland() {
