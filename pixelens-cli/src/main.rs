@@ -32,6 +32,7 @@ Commands:
   daemon       Start background daemon
   status       Show daemon status
   stop         Stop daemon
+  install      Install systemd user service (Linux) or scheduled task (Windows)
   hotkey       Manage global hotkey (enable|disable|status)
   autostart    Manage XDG autostart .desktop (enable|disable|status)
   config       Manage configuration
@@ -102,6 +103,13 @@ async fn real_main() -> ExitCode {
             }
         },
         Some("stop") => match run_stop().await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(1)
+            }
+        },
+        Some("install") => match run_install().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -213,13 +221,13 @@ fn unit_content(bin: &std::path::Path) -> String {
          \n\
          [Service]\n\
          Type=simple\n\
-         ExecStart={bin}\n\
+         ExecStart={}\n\
          Restart=on-failure\n\
          RestartSec=5\n\
          \n\
          [Install]\n\
          WantedBy=default.target\n",
-        bin = bin.display()
+        bin.display()
     )
 }
 
@@ -230,6 +238,142 @@ fn systemctl(args: &[&str]) -> std::process::Command {
     cmd
 }
 
+/// `pixelens install` — install systemd user service (
+/// `pixelens install` — install systemd user service (Linux) or
+/// scheduled task (Windows) so the daemon + hotkey start on login.
+#[cfg(unix)]
+async fn run_install() -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
+
+    // Locate pixelensd binary
+    let pixelensd_bin = which::which("pixelensd")
+        .ok()
+        .filter(|p| p.exists())
+        .ok_or("pixelensd binary not found on PATH. Install the .deb first.")?;
+
+    // Locate pixelens-keyhook binary
+    let keyhook_bin = which::which("pixelens-keyhook")
+        .ok()
+        .filter(|p| p.exists())
+        .ok_or("pixelens-keyhook binary not found on PATH. Install the .deb first.")?;
+
+    // systemd user directory
+    let systemd_dir = dirs_user_systemd();
+    fs::create_dir_all(&systemd_dir)?;
+
+    // pixelensd.service
+    let pixelensd_unit = systemd_dir.join("pixelens.service");
+    let pixelensd_content = format!(
+        r#"[Unit]
+Description=Pixelens OCR daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart={bin}
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=graphical-session.target
+"#,
+        bin = pixelensd_bin.display()
+    );
+    fs::write(&pixelensd_unit, pixelensd_content)?;
+    println!("installed: {}", pixelensd_unit.display());
+
+    // pixelens-keyhook.service
+    let keyhook_unit = systemd_dir.join("pixelens-keyhook.service");
+    let keyhook_content = format!(
+        r#"[Unit]
+Description=Pixelens global hotkey listener
+After=pixelens.service
+PartOf=pixelens.service
+
+[Service]
+Type=simple
+ExecStart={bin}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+"#,
+        bin = keyhook_bin.display()
+    );
+    fs::write(&keyhook_unit, keyhook_content)?;
+    println!("installed: {}", keyhook_unit.display());
+
+    // systemctl --user daemon-reload
+    let status = std::process::Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .status()?;
+    if !status.success() {
+        return Err("systemctl --user daemon-reload failed".into());
+    }
+
+    // Enable + start both
+    for unit in ["pixelens.service", "pixelens-keyhook.service"] {
+        let status = std::process::Command::new("systemctl")
+            .args(["--user", "enable", "--now", unit])
+            .status()?;
+        if !status.success() {
+            return Err(format!("systemctl --user enable --now {unit} failed").into());
+        }
+        println!("enabled & started: {unit}");
+    }
+
+    println!("Install complete. Daemon + hotkey will start on next login (or now).");
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn run_install() -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::Command;
+
+    let pixelensd = which::which("pixelensd.exe")
+        .or_else(|_| which::which("pixelensd"))
+        .ok()
+        .filter(|p| p.exists())
+        .ok_or("pixelensd.exe not found on PATH")?;
+
+    let keyhook = which::which("pixelens-keyhook.exe")
+        .or_else(|_| which::which("pixelens-keyhook"))
+        .ok()
+        .filter(|p| p.exists())
+        .ok_or("pixelens-keyhook.exe not found on PATH")?;
+
+    let task_name = "PixelensDaemon";
+    let task_name_hk = "PixelensKeyhook";
+
+    for (name, bin) in &[(task_name, &pixelensd), (task_name_hk, &keyhook)] {
+        let status = Command::new("schtasks.exe")
+            .args([
+                "/Create",
+                "/TN",
+                name,
+                "/TR",
+                bin.to_str().unwrap(),
+                "/SC",
+                "ONLOGON",
+                "/RL",
+                "LIMITED",
+                "/F",
+            ])
+            .status()?;
+        if !status.success() {
+            return Err(format!("schtasks /Create {name} failed").into());
+        }
+        println!("scheduled task created: {name}");
+    }
+
+    println!("Install complete. Daemon + hotkey will start on next login.");
+    Ok(())
+}
+
+/// `pixelens hotkey <enable|disable|status>` — manage the user systemd
+/// service that runs `pixelens-keyhook` on boot/login.
 async fn run_hotkey(sub: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     match sub {
         Some("enable") => {
@@ -315,8 +459,8 @@ fn autostart_desktop_path() -> std::path::PathBuf {
 /// Build the XDG autostart `.desktop` file content for `pixelens-keyhook`.
 fn autostart_desktop_content(bin: &std::path::Path) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=Pixelens\nExec={bin}\nComment=Start Pixelens global hotkey listener on login\nX-GNOME-Autostart-enabled=true\n",
-        bin = bin.display()
+        "[Desktop Entry]\nType=Application\nName=Pixelens\nExec={}\nComment=Start Pixelens global hotkey listener on login\nX-GNOME-Autostart-enabled=true\n",
+        bin.display()
     )
 }
 
