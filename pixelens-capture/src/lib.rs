@@ -9,6 +9,7 @@
 //! documentation in `slurp_grim.rs` for the rationale.
 
 pub mod detector;
+pub mod monitor;
 pub mod pipeline;
 pub mod slurp_grim;
 pub mod wayland;
@@ -17,13 +18,19 @@ pub mod windows;
 pub mod x11;
 
 pub use detector::{detect_display_server, DisplayServer};
+pub use monitor::{detect_active_monitor, Monitor};
 pub use pipeline::{GrabError, GrabErrorKind, GrabOutcome, GrabPipeline};
 pub use slurp_grim::{
     format_geometry, parse_geometry, GrimCapturer, RegionSelector, ScreenCapturer, SlurpSelector,
 };
 pub use which::{which, WhichError};
 
-use pixelens_core::{CaptureProvider, CaptureRequest, PixelensError, RawCapture};
+// Re-export core types for convenience
+pub use pixelens_core::{
+    CaptureError, CaptureResult, PixelensError, PixelensResult, Point, Rect, Size,
+};
+
+use pixelens_core::{CaptureProvider, CaptureRequest, RawCapture};
 use std::sync::Arc;
 
 /// Concrete capture provider selected at daemon startup (long-term path).

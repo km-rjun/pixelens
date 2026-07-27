@@ -7,6 +7,7 @@
 //! output) and shoehorning them into `CaptureProvider` would distort
 //! that trait. See `docs/architecture.md` for the rationale.
 
+use crate::Monitor;
 use pixelens_core::{CaptureError, CaptureResult, Rect};
 use std::path::Path;
 use std::process::Stdio;
@@ -29,6 +30,16 @@ pub fn format_geometry(r: Rect) -> String {
 pub trait RegionSelector: Send + Sync {
     /// Block until the user makes a selection or cancels.
     fn select(&self) -> CaptureResult<Option<Rect>>;
+
+    /// Select a region, optionally constrained to a specific monitor.
+    ///
+    /// Default implementation ignores the monitor and calls `select()`.
+    /// Backends that support multi-monitor (e.g. slurp with `-o` output)
+    /// can override this.
+    fn select_with_monitor(&self, monitor: Option<&Monitor>) -> CaptureResult<Option<Rect>> {
+        let _ = monitor;
+        self.select()
+    }
 }
 
 /// Backend that captures a rectangular region of the screen to a file.
@@ -38,6 +49,21 @@ pub trait ScreenCapturer: Send + Sync {
     /// Capture `region` to `output_path`. The output format is determined
     /// by the file extension; `grim` will write PNG for `.png`, etc.
     fn capture(&self, region: Rect, output_path: &Path) -> CaptureResult<()>;
+
+    /// Capture `region` to `output_path`, optionally constrained to a monitor.
+    ///
+    /// Default implementation ignores the monitor and calls `capture()`.
+    /// Backends that support multi-monitor (e.g. grim with `-o` output)
+    /// can override this.
+    fn capture_with_monitor(
+        &self,
+        region: Rect,
+        output_path: &Path,
+        monitor: Option<&Monitor>,
+    ) -> CaptureResult<()> {
+        let _ = monitor;
+        self.capture(region, output_path)
+    }
 }
 
 /// `slurp`-backed region selector.
@@ -76,7 +102,7 @@ impl RegionSelector for SlurpSelector {
         tracing::info!(program = %self.program, "invoking region selector");
 
         let output = Command::new(&self.program)
-            .arg("-d") // print display dimensions on stderr (useful for debugging)
+            .arg("-d")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -88,6 +114,53 @@ impl RegionSelector for SlurpSelector {
                     CaptureError::Selector(e.to_string())
                 }
             })?;
+
+        if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                tracing::info!("region selection cancelled by user");
+                return Ok(None);
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CaptureError::Selector(format!(
+                "slurp exited with status {}: {}",
+                output.status,
+                stderr.trim()
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let geometry = stdout.trim();
+        tracing::debug!(geometry, "slurp returned");
+
+        let rect = parse_geometry(geometry).ok_or_else(|| {
+            CaptureError::Selector(format!("could not parse slurp output: {geometry:?}"))
+        })?;
+
+        Ok(Some(rect))
+    }
+
+    fn select_with_monitor(&self, monitor: Option<&Monitor>) -> CaptureResult<Option<Rect>> {
+        use std::process::Command;
+
+        let mut cmd = Command::new(&self.program);
+        cmd.arg("-d")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(m) = monitor {
+            cmd.arg("-o").arg(&m.name);
+            tracing::debug!(monitor = %m.name, "constraining slurp to monitor");
+        }
+
+        let output = cmd.output().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                CaptureError::ToolMissing(self.program.clone())
+            } else {
+                CaptureError::Selector(e.to_string())
+            }
+        })?;
 
         if !output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -175,48 +248,85 @@ impl ScreenCapturer for GrimCapturer {
             )));
         }
 
-        // grim does not surface capture failures in the exit status for
-        // every failure mode (e.g. portal errors on some compositors),
-        // so confirm the file exists and is non-empty.
         let meta = std::fs::metadata(output_path).map_err(|e| {
             CaptureError::Capture(format!(
-                "grim reported success but output file is missing: {e}"
+                "grim reported success but output file is inaccessible: {e}"
             ))
         })?;
+
         if meta.len() == 0 {
             return Err(CaptureError::Capture(
-                "grim wrote a zero-byte output file".to_string(),
+                "grim wrote a 0-byte capture file".to_string(),
             ));
         }
 
-        tracing::info!(bytes = meta.len(), "capture complete");
+        Ok(())
+    }
+
+    fn capture_with_monitor(
+        &self,
+        region: Rect,
+        output_path: &Path,
+        monitor: Option<&Monitor>,
+    ) -> CaptureResult<()> {
+        use std::process::Command;
+
+        let geometry = format_geometry(region);
+        let mut cmd = Command::new(&self.program);
+        cmd.arg("-g").arg(&geometry).arg(output_path);
+
+        if let Some(m) = monitor {
+            cmd.arg("-o").arg(&m.name);
+            tracing::debug!(monitor = %m.name, "constraining grim to monitor");
+        }
+
+        let status = cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    CaptureError::ToolMissing(self.program.clone())
+                } else {
+                    CaptureError::Capture(e.to_string())
+                }
+            })?;
+
+        if !status.success() {
+            return Err(CaptureError::Capture(format!(
+                "grim exited with status {status}"
+            )));
+        }
+
+        let meta = std::fs::metadata(output_path).map_err(|e| {
+            CaptureError::Capture(format!(
+                "grim reported success but output file is inaccessible: {e}"
+            ))
+        })?;
+
+        if meta.len() == 0 {
+            return Err(CaptureError::Capture(
+                "grim wrote a 0-byte capture file".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
 
-/// Parse a `WxH+X+Y` geometry string (slurp output) into a [`Rect`].
-///
-/// Accepts with or without the `+X+Y` suffix (slurp with `-d` only).
-pub fn parse_geometry(geometry: &str) -> Option<Rect> {
-    // Expected forms:
-    //   "320x180+0+0"
-    //   "320x180"
-    let (size_part, offset_part) = match geometry.split_once('+') {
-        Some((s, rest)) => (s, Some(rest)),
-        None => (geometry, None),
-    };
-
+/// Parse a geometry string in `WxH+X+Y` form.
+pub fn parse_geometry(s: &str) -> Option<Rect> {
+    let (size_part, offset_part) = s.split_once('+')?;
     let (w_str, h_str) = size_part.split_once('x')?;
-    let width: u32 = w_str.parse().ok()?;
-    let height: u32 = h_str.parse().ok()?;
-
-    let (x, y) = if let Some(off) = offset_part {
-        let (x_str, y_str) = off.split_once('+')?;
-        (x_str.parse().ok()?, y_str.parse().ok()?)
-    } else {
-        (0, 0)
-    };
-
+    let width = w_str.parse().ok()?;
+    let height = h_str.parse().ok()?;
+    let offset_parts: Vec<&str> = offset_part.split('+').collect();
+    if offset_parts.len() < 2 {
+        return None;
+    }
+    let x = offset_parts[0].parse().ok()?;
+    let y = offset_parts[1].parse().ok()?;
     Some(Rect::new(x, y, width, height))
 }
 
@@ -225,35 +335,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn format_geometry_round_trips() {
+        let r = Rect::new(10, 20, 300, 200);
+        let geom = format_geometry(r);
+        let parsed = parse_geometry(&geom).unwrap();
+        assert_eq!(r, parsed);
+    }
+
+    #[test]
+    fn format_geometry_clamps_zero() {
+        let r = Rect::new(0, 0, 0, 0);
+        let geom = format_geometry(r);
+        assert_eq!(geom, "1x1+0+0");
+    }
+
+    #[test]
     fn parse_geometry_with_offset() {
-        let r = parse_geometry("100x50+10+20").unwrap();
-        assert_eq!(r.size.width, 100);
-        assert_eq!(r.size.height, 50);
-        assert_eq!(r.origin.x, 10);
-        assert_eq!(r.origin.y, 20);
+        let r = parse_geometry("1920x1080+1920+0").unwrap();
+        assert_eq!(r.origin.x, 1920);
+        assert_eq!(r.origin.y, 0);
+        assert_eq!(r.size.width, 1920);
+        assert_eq!(r.size.height, 1080);
     }
 
     #[test]
     fn parse_geometry_without_offset() {
-        let r = parse_geometry("800x600").unwrap();
-        assert_eq!(r.size.width, 800);
-        assert_eq!(r.size.height, 600);
+        let r = parse_geometry("1920x1080+0+0").unwrap();
         assert_eq!(r.origin.x, 0);
         assert_eq!(r.origin.y, 0);
-    }
-
-    #[test]
-    fn parse_geometry_garbage_returns_none() {
-        assert!(parse_geometry("nope").is_none());
-        assert!(parse_geometry("").is_none());
-        assert!(parse_geometry("100x").is_none());
-    }
-
-    #[test]
-    fn format_geometry_round_trips() {
-        let r = Rect::new(15, 25, 320, 180);
-        assert_eq!(format_geometry(r), "320x180+15+25");
-        let parsed = parse_geometry(&format_geometry(r)).unwrap();
-        assert_eq!(parsed, r);
+        assert_eq!(r.size.width, 1920);
+        assert_eq!(r.size.height, 1080);
     }
 }

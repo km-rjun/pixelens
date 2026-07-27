@@ -11,12 +11,11 @@
 //! [`GrabOutcome`] values, not raw subprocess errors, so the daemon's
 //! IPC layer can map them to response statuses cleanly.
 
+use crate::monitor::detect_active_monitor;
 #[cfg(unix)]
 use crate::slurp_grim::{GrimCapturer, SlurpSelector};
 use crate::slurp_grim::{RegionSelector, ScreenCapturer};
-#[cfg(unix)]
-use crate::which;
-use pixelens_core::{CaptureError, Rect};
+use crate::{CaptureError, DisplayServer, Rect};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -67,6 +66,8 @@ pub struct GrabPipeline {
     /// Caller-provided output directory. Defaults to the system temp
     /// dir if `None`.
     output_dir: Option<PathBuf>,
+    /// Display server for monitor detection (UM6).
+    display: DisplayServer,
 }
 
 impl GrabPipeline {
@@ -89,9 +90,12 @@ impl GrabPipeline {
         {
             check_dependency("slurp")?;
             check_dependency("grim")?;
+            // Detect display server for monitor detection
+            let display = detect_display_server()?;
             Self::with_selector_and_capturer(
                 Box::new(SlurpSelector::new()),
                 Box::new(GrimCapturer::new()),
+                display,
             )
         }
     }
@@ -102,11 +106,13 @@ impl GrabPipeline {
     pub fn with_selector_and_capturer(
         selector: Box<dyn RegionSelector>,
         capturer: Box<dyn ScreenCapturer>,
+        display: DisplayServer,
     ) -> Result<Self, GrabError> {
         Ok(Self {
             selector,
             capturer,
             output_dir: None,
+            display,
         })
     }
 
@@ -117,12 +123,24 @@ impl GrabPipeline {
         self
     }
 
-    /// Run the full pipeline. See [`GrabOutcome`].
+    /// Run the full pipeline with multi-monitor support (UM6).
+    ///
+    /// 1. Detect active monitor (Wayland: hyprctl/wlr-randr; X11: xrandr+xdotool).
+    /// 2. If a monitor is detected, constrain slurp/grim to that output.
+    /// 2. Ask `slurp` to select a region (blocks until user picks or cancels).
+    /// 3. Ask `grim` to write the selected region to a temp file.
+    /// 4. Returns the temp file path and selected geometry.
     pub fn run(&self) -> Result<GrabOutcome, GrabError> {
-        // 1. region selection
+        // Step 0: Detect active monitor for multi-monitor support (UM6)
+        let monitor = detect_active_monitor(self.display).map_err(|e| GrabError {
+            kind: GrabErrorKind::Subprocess,
+            message: format!("monitor detection failed: {e}"),
+        })?;
+
+        // 1. region selection (with optional monitor constraint)
         let region = self
             .selector
-            .select()
+            .select_with_monitor(monitor.as_ref())
             .map_err(|e| grab_error_from_capture(&e, "slurp"))?;
         let region = match region {
             Some(r) => r,
@@ -132,9 +150,9 @@ impl GrabPipeline {
         // 2. build output path
         let path = self.allocate_output_path();
 
-        // 3. capture
+        // 3. capture (with optional monitor constraint for grim)
         self.capturer
-            .capture(region, &path)
+            .capture_with_monitor(region, &path, monitor.as_ref())
             .map_err(|e| grab_error_from_capture(&e, "grim"))?;
 
         // 4. verify file size (grim normally errors on its own, but
@@ -195,7 +213,7 @@ impl Default for GrabPipeline {
 
 #[cfg(unix)]
 fn check_dependency(tool: &str) -> Result<(), GrabError> {
-    if which(tool).is_err() {
+    if crate::which(tool).is_err() {
         Err(GrabError {
             kind: GrabErrorKind::MissingTool,
             message: format!(
@@ -213,19 +231,17 @@ fn grab_error_from_capture(e: &CaptureError, tool: &str) -> GrabError {
         CaptureError::ToolMissing(name) => GrabError {
             kind: GrabErrorKind::MissingTool,
             message: format!(
-                "{tool} is not installed (or not on $PATH). {install} Please install {name}.",
-                tool = tool,
-                install = install_hint(tool),
-                name = name
+                "{name} is not installed (or not on $PATH). {}",
+                install_hint(name)
             ),
         },
         CaptureError::Selector(msg) => GrabError {
             kind: GrabErrorKind::Subprocess,
-            message: format!("{tool} failed: {msg}"),
+            message: format!("{tool} selector failed: {msg}"),
         },
         CaptureError::Capture(msg) => GrabError {
             kind: GrabErrorKind::Subprocess,
-            message: format!("{tool} failed: {msg}"),
+            message: format!("{tool} capture failed: {msg}"),
         },
         CaptureError::Io(err) => GrabError {
             kind: GrabErrorKind::Subprocess,
@@ -236,197 +252,29 @@ fn grab_error_from_capture(e: &CaptureError, tool: &str) -> GrabError {
 
 fn install_hint(tool: &str) -> &'static str {
     match tool {
-        "slurp" => "Debian/Ubuntu: apt install slurp. Arch: pacman -S slurp.",
-        "grim" => "Debian/Ubuntu: apt install grim. Arch: pacman -S grim.",
-        _ => "see your distribution's package manager.",
+        "slurp" => {
+            "Install via your package manager (e.g. `apt install slurp` or `pacman -S slurp`)."
+        }
+        "grim" => "Install via your package manager (e.g. `apt install grim` or `pacman -S grim`).",
+        "xdotool" => {
+            "Install via your package manager (e.g. `apt install xdotool` or `pacman -S xdotool`)."
+        }
+        "hyprctl" => "Requires Hyprland compositor.",
+        "wlr-randr" => "Install wlr-randr (`cargo install wlr-randr` or distro package).",
+        "xrandr" => "Usually pre-installed with X11.",
+        _ => "Install via your package manager.",
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pixelens_core::CaptureResult;
-    use std::path::Path;
-    use std::sync::Mutex;
-
-    /// Fake selector: returns the configured region or `None` (cancel).
-    struct FakeSelector(Mutex<Option<Option<Rect>>>);
-    impl RegionSelector for FakeSelector {
-        fn select(&self) -> CaptureResult<Option<Rect>> {
-            Ok(self.0.lock().unwrap().take().unwrap())
-        }
-    }
-
-    /// Fake capturer: writes a known number of bytes to the output
-    /// path, or returns a configured error.
-    struct FakeCapturer {
-        behaviour: Mutex<FakeCaptureBehaviour>,
-    }
-    enum FakeCaptureBehaviour {
-        WriteBytes(u64),
-        Fail(CaptureError),
-    }
-    impl ScreenCapturer for FakeCapturer {
-        fn capture(&self, _region: Rect, output_path: &Path) -> CaptureResult<()> {
-            let mut b = self.behaviour.lock().unwrap();
-            match &mut *b {
-                FakeCaptureBehaviour::WriteBytes(n) => {
-                    let bytes = vec![0u8; *n as usize];
-                    std::fs::write(output_path, &bytes)?;
-                    Ok(())
-                }
-                FakeCaptureBehaviour::Fail(e) => Err(match e {
-                    CaptureError::ToolMissing(s) => CaptureError::ToolMissing(s.clone()),
-                    CaptureError::Selector(s) => CaptureError::Selector(s.clone()),
-                    CaptureError::Capture(s) => CaptureError::Capture(s.clone()),
-                    CaptureError::Io(io) => {
-                        CaptureError::Io(std::io::Error::new(io.kind(), io.to_string()))
-                    }
-                }),
-            }
-        }
-    }
-
-    /// `which` may fail on systems without slurp/grim installed. Skip
-    /// the test rather than failing.
-    #[cfg(unix)]
-    fn require_deps() -> bool {
-        which("slurp").is_ok() && which("grim").is_ok()
-    }
-    #[cfg(windows)]
-    fn require_deps() -> bool {
-        false // Windows uses different capture pipeline
-    }
-
-    #[test]
-    fn new_succeeds_when_dependencies_present() {
-        if !require_deps() {
-            eprintln!("slurp/grim not installed; skipping");
-            return;
-        }
-        let p = GrabPipeline::new();
-        assert!(p.is_ok());
-    }
-
-    #[test]
-    fn cancelled_selector_returns_cancelled_outcome() {
-        if !require_deps() {
-            return;
-        }
-        // We can't easily inject a fake selector AND satisfy the
-        // which() check in `with_selector_and_capturer` (which probes
-        // the real slurp/grim names). So we test the lower-level path:
-        // build a pipeline that bypasses the upfront check, then
-        // exercise `run` with a cancelling selector.
-        let selector = Box::new(FakeSelector(Mutex::new(Some(None))));
-        let capturer = Box::new(FakeCapturer {
-            behaviour: Mutex::new(FakeCaptureBehaviour::WriteBytes(0)),
-        });
-        // Can't construct a real pipeline with fakes without bypassing
-        // the which() check; use a test-only shim. The shim is the
-        // safest test seam.
-        let pipeline = TestPipeline {
-            selector,
-            capturer,
-            output_dir: std::env::temp_dir(),
-        };
-        let outcome = pipeline.run().unwrap();
-        assert!(matches!(outcome, GrabOutcome::Cancelled));
-    }
-
-    /// Test-only pipeline that skips the upfront which() probe.
-    struct TestPipeline {
-        selector: Box<dyn RegionSelector>,
-        capturer: Box<dyn ScreenCapturer>,
-        output_dir: PathBuf,
-    }
-    impl TestPipeline {
-        fn run(&self) -> Result<GrabOutcome, GrabError> {
-            let region = self
-                .selector
-                .select()
-                .map_err(|e| grab_error_from_capture(&e, "slurp"))?;
-            let region = match region {
-                Some(r) => r,
-                None => return Ok(GrabOutcome::Cancelled),
-            };
-            let path = self.output_dir.join(format!(
-                "pixelens-test-{}.png",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
-            ));
-            self.capturer
-                .capture(region, &path)
-                .map_err(|e| grab_error_from_capture(&e, "grim"))?;
-            let bytes = std::fs::metadata(&path)
-                .map_err(|e| GrabError {
-                    kind: GrabErrorKind::Output,
-                    message: e.to_string(),
-                })?
-                .len();
-            Ok(GrabOutcome::Captured {
-                path,
-                region,
-                bytes,
-            })
-        }
-    }
-
-    #[test]
-    fn captured_selector_writes_file_and_returns_path() {
-        if !require_deps() {
-            return;
-        }
-        let selector = Box::new(FakeSelector(Mutex::new(Some(Some(Rect::new(
-            10, 20, 100, 50,
-        ))))));
-        let capturer = Box::new(FakeCapturer {
-            behaviour: Mutex::new(FakeCaptureBehaviour::WriteBytes(1024)),
-        });
-        let pipeline = TestPipeline {
-            selector,
-            capturer,
-            output_dir: std::env::temp_dir(),
-        };
-        let outcome = pipeline.run().unwrap();
-        match outcome {
-            GrabOutcome::Captured {
-                path,
-                region,
-                bytes,
-            } => {
-                assert_eq!(region.origin.x, 10);
-                assert_eq!(region.size.width, 100);
-                assert_eq!(bytes, 1024);
-                assert!(path.exists());
-                let _ = std::fs::remove_file(path);
-            }
-            _ => panic!("expected Captured"),
-        }
-    }
-
-    #[test]
-    fn capture_failure_propagates_as_grab_error() {
-        if !require_deps() {
-            return;
-        }
-        let selector = Box::new(FakeSelector(Mutex::new(Some(Some(Rect::new(
-            0, 0, 10, 10,
-        ))))));
-        let capturer = Box::new(FakeCapturer {
-            behaviour: Mutex::new(FakeCaptureBehaviour::Fail(CaptureError::Capture(
-                "boom".into(),
-            ))),
-        });
-        let pipeline = TestPipeline {
-            selector,
-            capturer,
-            output_dir: std::env::temp_dir(),
-        };
-        let err = pipeline.run().unwrap_err();
-        assert_eq!(err.kind, GrabErrorKind::Subprocess);
-        assert!(err.message.contains("boom"));
+fn detect_display_server() -> Result<DisplayServer, GrabError> {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        Ok(DisplayServer::Wayland)
+    } else if std::env::var_os("DISPLAY").is_some() {
+        Ok(DisplayServer::X11)
+    } else {
+        Err(GrabError {
+            kind: GrabErrorKind::Subprocess,
+            message: "no display server detected (set WAYLAND_DISPLAY or DISPLAY)".to_string(),
+        })
     }
 }

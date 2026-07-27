@@ -12,6 +12,7 @@ description = "Display server detection and screen capture backends (Wayland, X1
 pixelens-core = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+serde_json = "1.0"
 
 [features]
 # Gate for the `Portal` capture variant. No deps here — the portal
