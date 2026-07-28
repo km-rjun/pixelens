@@ -37,14 +37,25 @@ pub async fn connect() -> Result<IpcStream, FrameError> {
     #[cfg(unix)]
     {
         let path = super::socket_path();
-        Ok(tokio::net::UnixStream::connect(path).await?)
+        let path_for_err = path.clone();
+        tokio::net::UnixStream::connect(path).await.map_err(|e| {
+            FrameError::Io(std::io::Error::new(
+                e.kind(),
+                format!("daemon not running (checked {path_for_err:?}). Start it with: pixelensd",),
+            ))
+        })
     }
     #[cfg(windows)]
     {
         use tokio::net::windows::named_pipe::ClientOptions;
         let client = ClientOptions::new()
             .open(windows_pipe_path())
-            .map_err(FrameError::Io)?;
+            .map_err(|e| {
+                FrameError::Io(std::io::Error::new(
+                e.kind(),
+                "daemon not running (checked \\\\.\\pipe\\pixelens). Start it with: pixelensd.exe"
+            ))
+            })?;
         Ok(client)
     }
 }
