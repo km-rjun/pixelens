@@ -55,8 +55,8 @@ pub fn copy_text(text: &str, display: DisplayServer) -> Result<(), ClipboardErro
 /// Never succeeds-fails the grab: callers should treat a returned
 /// `Err` as "log + continue".
 pub fn copy_text(text: &str) -> Result<(), ClipboardError> {
-    use pixelens_notify::windows_clipboard_copy;
-    windows_clipboard_copy(text)
+    use pixelens_notify::{windows_clipboard_copy, NotifyError};
+    windows_clipboard_copy(text).map_err(|e| ClipboardError::Backend(e.to_string()))
 }
 
 #[cfg(unix)]
