@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap_complete::Shell;
 use pixelens_config::{get_value, load_config, save_config, set_value, KNOWN_KEYS};
 use pixelens_ipc::{
     connect as ipc_connect, read_response, write_frame, Command, FrameError, GrabResponsePayload,
@@ -138,6 +139,41 @@ async fn real_main() -> ExitCode {
                     ExitCode::from(1)
                 }
             }
+        }
+        Some("completions") => {
+            let shell_str = args.get(1).map(String::as_str).unwrap_or("bash");
+            let shell: Shell = shell_str.parse().unwrap_or(Shell::Bash);
+            let mut app = clap::Command::new(BINARY)
+                .version(VERSION)
+                .about("Pixelens - Linux-native visual text extraction");
+
+            // Add all subcommands manually since we don't use clap derive
+            app = app
+                .subcommand(
+                    clap::Command::new("grab").about("Select an area and copy text to clipboard"),
+                )
+                .subcommand(clap::Command::new("copy").about("Alias for grab"))
+                .subcommand(clap::Command::new("daemon").about("Start background daemon"))
+                .subcommand(clap::Command::new("status").about("Show daemon status"))
+                .subcommand(clap::Command::new("stop").about("Stop daemon"))
+                .subcommand(
+                    clap::Command::new("install")
+                        .about("Install systemd user service (Linux) or scheduled task (Windows)"),
+                )
+                .subcommand(
+                    clap::Command::new("hotkey")
+                        .about("Manage global hotkey (enable|disable|status)"),
+                )
+                .subcommand(
+                    clap::Command::new("autostart")
+                        .about("Manage XDG autostart .desktop (enable|disable|status)"),
+                )
+                .subcommand(clap::Command::new("config").about("Manage configuration"))
+                .subcommand(clap::Command::new("completions").about("Generate shell completions"))
+                .subcommand(clap::Command::new("version").about("Show version"));
+
+            clap_complete::generate(shell, &mut app, BINARY, &mut std::io::stdout());
+            ExitCode::SUCCESS
         }
         Some(cmd) if RESERVED_COMMANDS.contains(&cmd) => {
             eprintln!(
