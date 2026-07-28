@@ -17,7 +17,7 @@ use crate::monitor::detect_active_monitor_windows;
 #[cfg(unix)]
 use crate::slurp_grim::{GrimCapturer, SlurpSelector};
 use crate::slurp_grim::{RegionSelector, ScreenCapturer};
-use crate::{CaptureError, DisplayServer, Rect};
+use crate::{CaptureError, Rect};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -68,8 +68,6 @@ pub struct GrabPipeline {
     /// Caller-provided output directory. Defaults to the system temp
     /// dir if `None`.
     output_dir: Option<PathBuf>,
-    /// Display server for monitor detection (UM6).
-    display: DisplayServer,
 }
 
 impl GrabPipeline {
@@ -92,12 +90,9 @@ impl GrabPipeline {
         {
             check_dependency("slurp")?;
             check_dependency("grim")?;
-            // Detect display server for monitor detection
-            let display = detect_display_server()?;
             Self::with_selector_and_capturer(
                 Box::new(SlurpSelector::new()),
                 Box::new(GrimCapturer::new()),
-                display,
             )
         }
     }
@@ -109,13 +104,11 @@ impl GrabPipeline {
     pub fn with_selector_and_capturer(
         selector: Box<dyn RegionSelector>,
         capturer: Box<dyn ScreenCapturer>,
-        display: DisplayServer,
     ) -> Result<Self, GrabError> {
         Ok(Self {
             selector,
             capturer,
             output_dir: None,
-            display,
         })
     }
 
@@ -128,7 +121,6 @@ impl GrabPipeline {
             selector,
             capturer,
             output_dir: None,
-            display: DisplayServer::Wayland, // dummy value, not used on Windows
         })
     }
 
@@ -149,7 +141,7 @@ impl GrabPipeline {
     pub fn run(&self) -> Result<GrabOutcome, GrabError> {
         // Step 0: Detect active monitor for multi-monitor support (UM6)
         #[cfg(unix)]
-        let monitor = detect_active_monitor(self.display).map_err(|e| GrabError {
+        let monitor = detect_active_monitor().map_err(|e| GrabError {
             kind: GrabErrorKind::Subprocess,
             message: format!("monitor detection failed: {e}"),
         })?;
@@ -286,18 +278,5 @@ fn install_hint(tool: &str) -> &'static str {
         "wlr-randr" => "Install wlr-randr (`cargo install wlr-randr` or distro package).",
         "xrandr" => "Usually pre-installed with X11.",
         _ => "Install via your package manager.",
-    }
-}
-
-fn detect_display_server() -> Result<DisplayServer, GrabError> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-        Ok(DisplayServer::Wayland)
-    } else if std::env::var_os("DISPLAY").is_some() {
-        Ok(DisplayServer::X11)
-    } else {
-        Err(GrabError {
-            kind: GrabErrorKind::Subprocess,
-            message: "no display server detected (set WAYLAND_DISPLAY or DISPLAY)".to_string(),
-        })
     }
 }

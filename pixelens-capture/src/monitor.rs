@@ -4,7 +4,6 @@
 //! can be scoped to that single output instead of the full virtual
 //! desktop. Falls back gracefully if detection is unavailable.
 
-use crate::DisplayServer;
 use pixelens_core::{PixelensError, PixelensResult, Point, Rect, Size};
 use std::process::Command;
 
@@ -27,11 +26,15 @@ pub struct Monitor {
 ///
 /// Returns `Ok(None)` if detection runs but cursor isn't on any output,
 /// or if the compositor doesn't support the required protocol.
-pub fn detect_active_monitor(display: DisplayServer) -> PixelensResult<Option<Monitor>> {
-    match display {
-        DisplayServer::Wayland => detect_wayland_monitor(),
-        DisplayServer::X11 => detect_x11_monitor(),
+pub fn detect_active_monitor() -> PixelensResult<Option<Monitor>> {
+    // Try Wayland first (Hyprland)
+    if let Ok(monitor) = detect_wayland_monitor() {
+        if monitor.is_some() {
+            return Ok(monitor);
+        }
     }
+    // Fall back to X11
+    detect_x11_monitor()
 }
 
 /// Detect the output containing the cursor.
