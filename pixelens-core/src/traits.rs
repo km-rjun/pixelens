@@ -73,13 +73,13 @@ pub trait CaptureProvider: Send + Sync {
 /// the umbrella enum.
 #[derive(Debug, thiserror::Error)]
 pub enum OcrError {
-    #[error("tesseract binary not found")]
+    #[error("OCR engine not available: tesseract binary not found on $PATH. Install tesseract-ocr via your package manager.")]
     EngineMissing,
 
-    #[error("tesseract failed: {0}")]
+    #[error("OCR engine failed: {0}")]
     Engine(String),
 
-    #[error("unsupported image format")]
+    #[error("unsupported image format for OCR")]
     UnsupportedImage,
 }
 

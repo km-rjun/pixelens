@@ -61,6 +61,15 @@ enum CliError {
     Io(#[from] std::io::Error),
 }
 
+fn print_error(msg: &str) {
+    eprintln!("error: {msg}");
+}
+
+fn print_error_with_hint(msg: &str, hint: &str) {
+    eprintln!("error: {msg}");
+    eprintln!("  hint: {hint}");
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn real_main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -76,58 +85,58 @@ async fn real_main() -> ExitCode {
         }
         Some("grab") | Some("copy") => match run_grab().await {
             Ok(()) => ExitCode::SUCCESS,
-            Err(CliError::DaemonNotRunning(p)) => {
-                eprintln!("error: daemon is not running. Start it with: pixelensd");
-                eprintln!("  (expected socket: {})", p.display());
+            Err(CliError::DaemonNotRunning(_p)) => {
+                print_error_with_hint("daemon is not running", "Start it with: pixelensd");
                 ExitCode::from(1)
             }
             Err(CliError::Ipc(IpcError::Io(_))) | Err(CliError::Io(_)) => {
-                let p = socket_path().unwrap_or_else(|_| PathBuf::from("(unknown)"));
-                eprintln!("error: daemon is not running. Start it with: pixelensd");
-                eprintln!("  (expected socket: {})", p.display());
+                print_error_with_hint("daemon is not running", "Start it with: pixelensd");
                 ExitCode::from(1)
             }
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
         Some("daemon") => {
-            println!("daemon mode is started by running `pixelensd` directly");
+            print_error_with_hint(
+                "daemon mode is started by running `pixelensd` directly",
+                "Run: pixelensd",
+            );
             ExitCode::SUCCESS
         }
         Some("status") => match run_status().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
         Some("stop") => match run_stop().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
         Some("install") => match run_install().await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
         Some("hotkey") => match run_hotkey(args.get(1).map(String::as_str)).await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
         Some("autostart") => match run_autostart(args.get(1).map(String::as_str)) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("error: {e}");
+                print_error(&e.to_string());
                 ExitCode::from(1)
             }
         },
@@ -135,7 +144,7 @@ async fn real_main() -> ExitCode {
             match run_config(args.get(1).map(String::as_str), args.get(2), args.get(3)) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
-                    eprintln!("error: {e}");
+                    print_error(&e.to_string());
                     ExitCode::from(1)
                 }
             }

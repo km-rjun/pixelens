@@ -39,8 +39,8 @@ pub enum PixelensError {
 /// the umbrella enum.
 #[derive(Debug, Error)]
 pub enum CaptureError {
-    #[error("required tool not found on $PATH: {0}")]
-    ToolMissing(String),
+    #[error("required tool not found on $PATH: {0}. {1}")]
+    ToolMissing(String, String),
 
     #[error("region selector failed: {0}")]
     Selector(String),

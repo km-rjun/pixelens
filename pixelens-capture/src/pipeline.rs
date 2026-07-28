@@ -232,7 +232,8 @@ fn check_dependency(tool: &str) -> Result<(), GrabError> {
         Err(GrabError {
             kind: GrabErrorKind::MissingTool,
             message: format!(
-                "{tool} is not installed (or not on $PATH). {}",
+                "{} is not installed (or not on $PATH). {}",
+                tool,
                 install_hint(tool)
             ),
         })
@@ -243,29 +244,26 @@ fn check_dependency(tool: &str) -> Result<(), GrabError> {
 
 fn grab_error_from_capture(e: &CaptureError, tool: &str) -> GrabError {
     match e {
-        CaptureError::ToolMissing(name) => GrabError {
+        CaptureError::ToolMissing(name, hint) => GrabError {
             kind: GrabErrorKind::MissingTool,
-            message: format!(
-                "{name} is not installed (or not on $PATH). {}",
-                install_hint(name)
-            ),
+            message: format!("{} is not installed (or not on $PATH). {}", name, hint),
         },
         CaptureError::Selector(msg) => GrabError {
             kind: GrabErrorKind::Subprocess,
-            message: format!("{tool} selector failed: {msg}"),
+            message: format!("{} selector failed: {}", tool, msg),
         },
         CaptureError::Capture(msg) => GrabError {
             kind: GrabErrorKind::Subprocess,
-            message: format!("{tool} capture failed: {msg}"),
+            message: format!("{} capture failed: {}", tool, msg),
         },
         CaptureError::Io(err) => GrabError {
             kind: GrabErrorKind::Subprocess,
-            message: format!("{tool} io error: {err}"),
+            message: format!("{} io error: {}", tool, err),
         },
     }
 }
 
-fn install_hint(tool: &str) -> &'static str {
+pub fn install_hint(tool: &str) -> &'static str {
     match tool {
         "slurp" => {
             "Install via your package manager (e.g. `apt install slurp` or `pacman -S slurp`)."

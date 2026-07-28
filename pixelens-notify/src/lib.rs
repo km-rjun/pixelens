@@ -28,12 +28,14 @@ pub enum NotificationKind {
 impl NotificationKind {
     pub fn message(self) -> &'static str {
         match self {
-            NotificationKind::TextCopied => "✓ Text copied to clipboard",
-            NotificationKind::NoTextFound => "No text found in selection.",
+            NotificationKind::TextCopied => "Text copied to clipboard",
+            NotificationKind::NoTextFound => "No text found in selection",
             // The Tesseract-missing message is parameterised with the
             // distro-appropriate install command; the sender composes
             // the final string before calling `send`.
-            NotificationKind::TesseractMissing => "Tesseract not found. Install with: ",
+            NotificationKind::TesseractMissing => {
+                "OCR engine not available: install tesseract-ocr via your package manager"
+            }
             NotificationKind::DaemonNotRunning => {
                 "Pixelens daemon is not running. Start with: pixelensd"
             }
@@ -208,11 +210,11 @@ mod tests {
     fn message_strings_are_stable() {
         assert_eq!(
             NotificationKind::TextCopied.message(),
-            "✓ Text copied to clipboard"
+            "Text copied to clipboard"
         );
         assert_eq!(
             NotificationKind::NoTextFound.message(),
-            "No text found in selection."
+            "No text found in selection"
         );
     }
 }

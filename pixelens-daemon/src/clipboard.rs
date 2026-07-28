@@ -22,7 +22,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ClipboardError {
     /// No clipboard backend (wl-copy/xclip/xsel/copyq) found on $PATH.
-    #[error("no clipboard backend available (install wl-clipboard or xclip/xsel)")]
+    #[error("clipboard unavailable: install wl-clipboard (Wayland) or xclip/xsel (X11)")]
     NoBackend,
 
     /// The chosen backend exited with a non-zero status.

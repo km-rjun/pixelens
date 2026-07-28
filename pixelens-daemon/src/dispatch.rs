@@ -25,6 +25,25 @@ use crate::clipboard::copy_text;
 use crate::state::DaemonState;
 use pixelens_notify::{notify_success, NotificationKind};
 
+/// Error message prefix for user-facing errors.
+const USER_ERROR_PREFIX: &str = "error: ";
+
+/// Build a user-friendly error response.
+fn user_error(request_id: &str, msg: &str) -> IpcResponse {
+    IpcResponse::error(request_id.to_string(), format!("{USER_ERROR_PREFIX}{msg}"))
+        .with_status(ResponseStatus::Error)
+}
+
+/// Build a user-friendly error response with a hint.
+#[allow(dead_code)]
+fn user_error_with_hint(request_id: &str, msg: &str, hint: &str) -> IpcResponse {
+    IpcResponse::error(
+        request_id.to_string(),
+        format!("{USER_ERROR_PREFIX}{msg}\n  hint: {hint}"),
+    )
+    .with_status(ResponseStatus::Error)
+}
+
 pub struct Dispatcher {
     state: Arc<DaemonState>,
 }
@@ -132,10 +151,10 @@ impl Dispatcher {
             (region, bytes, path, text)
         } else {
             let Some(pipeline) = &self.state.pipeline else {
-                return IpcResponse::error(
-                        request.request_id.clone(),
-                        "capture pipeline not initialised: install slurp and grim, then restart the daemon",
-                    );
+                return user_error(
+                    &request.request_id,
+                    "capture pipeline not initialised: install slurp and grim, then restart the daemon",
+                );
             };
             // Run the pipeline on a blocking thread: slurp / grim do
             // real I/O and may block while the overlay is on screen.
@@ -144,7 +163,7 @@ impl Dispatcher {
                 Ok(o) => o,
                 Err(e) => {
                     tracing::warn!(error = %e, "grab failed");
-                    return IpcResponse::error(request.request_id.clone(), e.to_string());
+                    return user_error(&request.request_id, &e.to_string());
                 }
             };
             match outcome {

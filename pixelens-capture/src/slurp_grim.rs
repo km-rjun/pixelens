@@ -7,6 +7,7 @@
 //! output) and shoehorning them into `CaptureProvider` would distort
 //! that trait. See `docs/architecture.md` for the rationale.
 
+use crate::pipeline::install_hint;
 use crate::Monitor;
 use pixelens_core::{CaptureError, CaptureResult, Rect};
 use std::path::Path;
@@ -109,9 +110,12 @@ impl RegionSelector for SlurpSelector {
             .output()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    CaptureError::ToolMissing(self.program.clone())
+                    CaptureError::ToolMissing(
+                        self.program.clone(),
+                        install_hint(&self.program).to_string(),
+                    )
                 } else {
-                    CaptureError::Selector(e.to_string())
+                    CaptureError::Selector(format!("failed to run {}: {}", self.program, e))
                 }
             })?;
 
@@ -123,7 +127,8 @@ impl RegionSelector for SlurpSelector {
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(CaptureError::Selector(format!(
-                "slurp exited with status {}: {}",
+                "{} exited with status {}: {}",
+                self.program,
                 output.status,
                 stderr.trim()
             )));
@@ -134,7 +139,10 @@ impl RegionSelector for SlurpSelector {
         tracing::debug!(geometry, "slurp returned");
 
         let rect = parse_geometry(geometry).ok_or_else(|| {
-            CaptureError::Selector(format!("could not parse slurp output: {geometry:?}"))
+            CaptureError::Selector(format!(
+                "could not parse {} output: {:?}",
+                self.program, geometry
+            ))
         })?;
 
         Ok(Some(rect))
@@ -156,9 +164,12 @@ impl RegionSelector for SlurpSelector {
 
         let output = cmd.output().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                CaptureError::ToolMissing(self.program.clone())
+                CaptureError::ToolMissing(
+                    self.program.clone(),
+                    install_hint(&self.program).to_string(),
+                )
             } else {
-                CaptureError::Selector(e.to_string())
+                CaptureError::Selector(format!("failed to run {}: {}", self.program, e))
             }
         })?;
 
@@ -170,7 +181,8 @@ impl RegionSelector for SlurpSelector {
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(CaptureError::Selector(format!(
-                "slurp exited with status {}: {}",
+                "{} exited with status {}: {}",
+                self.program,
                 output.status,
                 stderr.trim()
             )));
@@ -181,7 +193,10 @@ impl RegionSelector for SlurpSelector {
         tracing::debug!(geometry, "slurp returned");
 
         let rect = parse_geometry(geometry).ok_or_else(|| {
-            CaptureError::Selector(format!("could not parse slurp output: {geometry:?}"))
+            CaptureError::Selector(format!(
+                "could not parse {} output: {:?}",
+                self.program, geometry
+            ))
         })?;
 
         Ok(Some(rect))
@@ -236,21 +251,26 @@ impl ScreenCapturer for GrimCapturer {
             .status()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    CaptureError::ToolMissing(self.program.clone())
+                    CaptureError::ToolMissing(
+                        self.program.clone(),
+                        install_hint(&self.program).to_string(),
+                    )
                 } else {
-                    CaptureError::Capture(e.to_string())
+                    CaptureError::Capture(format!("failed to run {}: {}", self.program, e))
                 }
             })?;
 
         if !status.success() {
             return Err(CaptureError::Capture(format!(
-                "grim exited with status {status}"
+                "{} exited with status {}",
+                self.program, status
             )));
         }
 
         let meta = std::fs::metadata(output_path).map_err(|e| {
             CaptureError::Capture(format!(
-                "grim reported success but output file is inaccessible: {e}"
+                "{} reported success but output file is inaccessible: {}",
+                self.program, e
             ))
         })?;
 
@@ -287,15 +307,19 @@ impl ScreenCapturer for GrimCapturer {
             .status()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    CaptureError::ToolMissing(self.program.clone())
+                    CaptureError::ToolMissing(
+                        self.program.clone(),
+                        install_hint(&self.program).to_string(),
+                    )
                 } else {
-                    CaptureError::Capture(e.to_string())
+                    CaptureError::Capture(format!("failed to run {}: {}", self.program, e))
                 }
             })?;
 
         if !status.success() {
             return Err(CaptureError::Capture(format!(
-                "grim exited with status {status}"
+                "{} exited with status {}",
+                self.program, status
             )));
         }
 
