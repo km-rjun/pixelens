@@ -163,11 +163,10 @@ mod tests {
         }
         #[cfg(windows)]
         {
-            let err = copy_text("hello");
-            assert!(
-                matches!(err, Err(ClipboardError::NoBackend)),
-                "got: {err:?}"
-            );
+            // On Windows the native clipboard via arboard is always available,
+            // so copy_text should succeed.
+            let result = copy_text("hello");
+            assert!(result.is_ok(), "expected Ok on Windows, got: {result:?}");
         }
     }
 }
