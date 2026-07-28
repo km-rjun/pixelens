@@ -20,11 +20,6 @@ visual HUD overlay was considered and deliberately deferred — see
 - A **Wayland or X11** session.
 - Runtime capture/OCR tools on `$PATH` (see table).
 
-| Tool | Purpose | Debian/Ubuntu | Arch | Fedora |
-|------|---------|---------------|------|--------|
-| `slurp` | Region selection | `sudo apt install slurp` | `sudo pacman -S slurp` | `sudo dnf install slurp` |
-| `grim` | Screen capture | `sudo apt install grim` | `sudo pacman -S grim` | `sudo dnf install grim` |
-| `tesseract` | OCR (text extraction) | `sudo apt install tesseract-ocr` | `sudo pacman -S tesseract` | `sudo dnf install tesseract` |
 | `wl-copy` / `xclip` | Clipboard write | `sudo apt install wl-clipboard` / `sudo apt install xclip` | `sudo pacman -S wl-clipboard` / `xclip` | `sudo dnf install wl-clipboard` / `xclip` |
 | `notify-send` | Desktop notification | `sudo apt install libnotify-bin` | `sudo pacman -S libnotify` | `sudo dnf install libnotify` |
 
@@ -89,21 +84,34 @@ cargo build --release --target x86_64-pc-windows-msvc
 This produces `target/x86_64-pc-windows-msvc/release/pixelensd.exe`,
 `pixelens.exe`, and `pixelens-keyhook.exe`.
 
-**Windows specifics:**
-
-- **Hotkey:** `Win+Shift+S` (the native Snip shortcut). Press it, pick a region
-  in the system capture picker, and the text is OCR'd and copied to the
-  clipboard with a toast.
-- **No `slurp`/`grim`/`tesseract`/`wl-copy`/`notify-send`** — all of those are
-  Linux-only. The Windows build links `tesseract` via the native path and uses
-  platform clipboard/notification APIs.
-- **IPC transport** is a named pipe (`\\.\pipe\pixelens`) instead of a Unix
-  socket.
-- **All tests pass** on Windows (`cargo test --target x86_64-pc-windows-msvc --workspace`).
-
 ### Quick start (Windows)
 
 ```powershell
+# 1. Start the daemon (keep this terminal open)
+.\pixelensd.exe
+
+# 2. In another terminal, trigger a grab
+.\pixelens.exe grab
+# Or press Win+Shift+S (the native Snip hotkey)
+```
+
+> **Note:** The daemon (`pixelensd.exe`) must be running before you run
+> `pixelens.exe grab` or press `Win+Shift+S`. If the daemon isn't running,
+> you'll see: `error: daemon not running (checked \\.\pipe\pixelens). Start it with: pixelensd.exe`
+
+### Install daemon as a scheduled task (Windows)
+
+```powershell
+# Installs a Windows Task Scheduler task to run pixelensd.exe at logon
+.\pixelens.exe install
+```
+
+This is the Windows equivalent of `pixelens install` on Linux (which creates a
+systemd user service). The task runs under your user account at logon.
+
+---
+
+## How to use
 # 1. Start the daemon (keep this terminal open)
 .\pixelensd.exe
 
