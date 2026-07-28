@@ -708,7 +708,7 @@ mod tests {
 
     fn test_state(backend: StubBackend) -> DaemonState {
         DaemonState {
-            display: Some(DisplayServer::Wayland),
+            display: if cfg!(unix) { Some(DisplayServer::Wayland) } else { None },
             pipeline: None,
             ocr: None,
             config: Config::default(),
@@ -719,36 +719,39 @@ mod tests {
     }
 
     #[tokio::test]
-        async fn decide_action_copy_dispatches_clipboard() {
-            let seen = Arc::new(Mutex::new(Vec::new()));
-            let state = test_state(StubBackend {
-                choice: MenuChoice::Copy,
-                seen: seen.clone(),
-            });
-            let dispatcher = Dispatcher::new(Arc::new(state));
+    async fn decide_action_copy_dispatches_clipboard() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let state = test_state(StubBackend {
+            choice: MenuChoice::Copy,
+            seen: seen.clone(),
+        });
+        let dispatcher = Dispatcher::new(Arc::new(state));
 
-            let resp = dispatcher.decide_action("hello world", "req-1").await;
+        let resp = dispatcher.decide_action("hello world", "req-1").await;
 
-            // Menu was consulted with the OCR text.
-            assert_eq!(
-                seen.lock().unwrap().as_slice(),
-                &["hello world".to_string()]
-            );
-            // Copy handler ran. On Unix there is no clipboard backend in headless
-            // env so it returns Error; on Windows arboard uses native API and
-            // returns Ok. Either is valid — the point is the menu→handler wiring.
-            #[cfg(unix)]
-            assert_eq!(resp.status, ResponseStatus::Error);
-            #[cfg(windows)]
-            assert_eq!(resp.status, ResponseStatus::Ok);
-            let msg = resp
-                .payload
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            #[cfg(unix)]
-            assert!(msg.to_lowercase().contains("clipboard"));
-        }
+        // Menu was consulted with the OCR text.
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &["hello world".to_string()]
+        );
+        // Copy handler ran. On Unix there is no clipboard backend in headless
+        // env so it returns Error; on Windows arboard uses native API and
+        // returns Ok. Either is valid — the point is the menu→handler wiring.
+        #[cfg(unix)]
+        assert_eq!(resp.status, ResponseStatus::Error);
+        #[cfg(windows)]
+        assert_eq!(resp.status, ResponseStatus::Ok);
+        let msg = resp
+            .payload
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        #[cfg(unix)]
+        assert!(msg.to_lowercase().contains("clipboard"));
+    }
+
+    #[tokio::test]
+    async fn decide_action_search_builds_url_request() {
         let state = test_state(StubBackend {
             choice: MenuChoice::Search,
             seen: Arc::new(Mutex::new(Vec::new())),
