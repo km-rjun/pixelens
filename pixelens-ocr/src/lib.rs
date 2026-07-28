@@ -101,9 +101,7 @@ impl TesseractOcrEngine {
                 return Err(OcrError::EngineMissing);
             }
             Err(e) => {
-                return Err(OcrError::Engine(format!(
-                    "failed to spawn tesseract: {e}"
-                )));
+                return Err(OcrError::Engine(format!("failed to spawn tesseract: {e}")));
             }
         };
 
@@ -166,11 +164,11 @@ fn temp_base() -> String {
 fn encode_image_as_bmp(image: &CaptureImage, out_path: &Path) -> Result<(), OcrError> {
     use bmp::{Image, Pixel};
 
-    let mut bmp = Image::new(image.width as u32, image.height as u32);
+    let mut bmp = Image::new(image.width, image.height);
 
     // Tesseract reads BMP top-down; our CaptureImage is also top-down.
-    for y in 0..image.height as u32 {
-        for x in 0..image.width as u32 {
+    for y in 0..image.height {
+        for x in 0..image.width {
             let i = (y * image.stride + x * 4) as usize;
             let r = image.pixels.get(i).copied().unwrap_or(0);
             let g = image.pixels.get(i + 1).copied().unwrap_or(0);
@@ -179,9 +177,8 @@ fn encode_image_as_bmp(image: &CaptureImage, out_path: &Path) -> Result<(), OcrE
         }
     }
 
-    bmp.save(out_path).map_err(|e| {
-        OcrError::Engine(format!("failed to save BMP: {e}"))
-    })
+    bmp.save(out_path)
+        .map_err(|e| OcrError::Engine(format!("failed to save BMP: {e}")))
 }
 
 /// Normalize tesseract output: trim surrounding whitespace and collapse

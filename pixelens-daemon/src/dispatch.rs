@@ -23,6 +23,7 @@ use pixelens_search::{build_search_url, ReverseImageSearcher};
 
 use crate::clipboard::copy_text;
 use crate::state::DaemonState;
+use pixelens_notify::{notify_success, NotificationKind};
 
 pub struct Dispatcher {
     state: Arc<DaemonState>,
@@ -474,6 +475,7 @@ impl Dispatcher {
     /// u7: copy text to the system clipboard via the display-appropriate
     /// backend. Pure (no network), so it runs inline. The status string
     /// is surfaced via [`AiResponsePayload`] (text=status, model="clipboard").
+    /// Also fires a desktop notification on success (M7).
     fn handle_copy(&self, request: &IpcRequest) -> IpcResponse {
         let payload: CopyPayload = match serde_json::from_value(request.payload.clone()) {
             Ok(p) => p,
@@ -488,6 +490,9 @@ impl Dispatcher {
 
         match copy_text(&payload.text, self.state.display) {
             Ok(()) => {
+                // M7: fire success notification (non-blocking, best-effort)
+                notify_success(NotificationKind::TextCopied.message());
+
                 let status = format!("copied {} bytes to clipboard", payload.text.len());
                 match IpcResponse::ok(
                     request.request_id.clone(),
