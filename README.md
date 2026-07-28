@@ -101,6 +101,31 @@ This produces `target/x86_64-pc-windows-msvc/release/pixelensd.exe`,
   socket.
 - **All tests pass** on Windows (`cargo test --target x86_64-pc-windows-msvc --workspace`).
 
+### Quick start (Windows)
+
+```powershell
+# 1. Start the daemon (keep this terminal open)
+.\pixelensd.exe
+
+# 2. In another terminal, trigger a grab
+.\pixelens.exe grab
+# Or press Win+Shift+S (the native Snip hotkey)
+```
+
+> **Note:** The daemon (`pixelensd.exe`) must be running before you run
+> `pixelens.exe grab` or press `Win+Shift+S`. If the daemon isn't running,
+> you'll see: `error: daemon not running (checked \\.\pipe\pixelens). Start it with: pixelensd.exe`
+
+### Install daemon as a scheduled task (Windows)
+
+```powershell
+# Installs a Windows Task Scheduler task to run pixelensd.exe at logon
+.\pixelens.exe install
+```
+
+This is the Windows equivalent of `pixelens install` on Linux (which creates a
+systemd user service). The task runs under your user account at logon.
+
 ---
 
 ## How to use
