@@ -65,14 +65,22 @@ pub async fn run() -> anyhow::Result<()> {
     );
 
     // Display-server detection is the first gate per PRD §"Display
-    // Server Detection". Failures here are fatal.
-    let display = pixelens_capture::detect_display_server()
-        .map_err(|e| anyhow::anyhow!("display server detection failed: {e}"))?;
-    let display_name = match display {
-        pixelens_capture::DisplayServer::Wayland => "wayland",
-        pixelens_capture::DisplayServer::X11 => "x11",
+    // Server Detection". On Unix (Wayland/X11) this is required.
+    // On Windows the capture path uses WinRT Graphics Capture Picker
+    // which does not depend on WAYLAND_DISPLAY/DISPLAY.
+    #[cfg(unix)]
+    let display = {
+        let display = pixelens_capture::detect_display_server()
+            .map_err(|e| anyhow::anyhow!("display server detection failed: {e}"))?;
+        let display_name = match display {
+            pixelens_capture::DisplayServer::Wayland => "wayland",
+            pixelens_capture::DisplayServer::X11 => "x11",
+        };
+        tracing::info!(display = display_name, "display server detected");
+        Some(display)
     };
-    tracing::info!(display = display_name, "display server detected");
+    #[cfg(windows)]
+    let display = None;
 
     let pipeline = match pixelens_capture::GrabPipeline::new() {
         Ok(p) => {

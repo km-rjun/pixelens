@@ -7,6 +7,7 @@
 //! - **Wayland**: `wl-copy` (from `wl-clipboard`), with `copyq`
 //!   as a fallback.
 //! - **X11**: `xclip -selection clipboard` or `xsel -b`.
+//! - **Windows**: Uses `arboard` via the `pixelens-notify` crate.
 //!
 //! If no usable clipboard tool is found, [`copy_text`] returns
 //! [`ClipboardError::NoBackend`]. Callers are expected to log a
@@ -16,6 +17,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+#[cfg(unix)]
 use pixelens_capture::DisplayServer;
 use thiserror::Error;
 
@@ -34,6 +36,7 @@ pub enum ClipboardError {
     Spawn(#[from] std::io::Error),
 }
 
+#[cfg(unix)]
 /// Copy `text` to the system clipboard, selecting a backend based on
 /// the active [`DisplayServer`].
 ///
@@ -46,6 +49,17 @@ pub fn copy_text(text: &str, display: DisplayServer) -> Result<(), ClipboardErro
     }
 }
 
+#[cfg(windows)]
+/// Copy `text` to the system clipboard on Windows using the native API.
+///
+/// Never succeeds-fails the grab: callers should treat a returned
+/// `Err` as "log + continue".
+pub fn copy_text(text: &str) -> Result<(), ClipboardError> {
+    use pixelens_notify::windows_clipboard_copy;
+    windows_clipboard_copy(text)
+}
+
+#[cfg(unix)]
 /// Try a list of candidate backends in order; return on the first
 /// that runs successfully.
 fn copy_with_candidates(candidates: &[(&str, &[&str])], text: &str) -> Result<(), ClipboardError> {
@@ -96,6 +110,7 @@ fn run_backend(bin: &str, args: &[&str], text: &str) -> Result<(), ClipboardErro
     }
 }
 
+#[cfg(unix)]
 fn copy_wayland(text: &str) -> Result<(), ClipboardError> {
     copy_with_candidates(
         &[
@@ -108,6 +123,7 @@ fn copy_wayland(text: &str) -> Result<(), ClipboardError> {
     )
 }
 
+#[cfg(unix)]
 fn copy_x11(text: &str) -> Result<(), ClipboardError> {
     copy_with_candidates(
         &[
@@ -131,16 +147,27 @@ mod tests {
         // On a headless CI box none of wl-copy/xclip/xsel/copyq should
         // be present, so copy_text must degrade to NoBackend rather than
         // panic. We assert the error is the graceful NoBackend variant.
-        let err = copy_text("hello", DisplayServer::Wayland);
-        assert!(
-            matches!(err, Err(ClipboardError::NoBackend)),
-            "got: {err:?}"
-        );
+        #[cfg(unix)]
+        {
+            let err = copy_text("hello", DisplayServer::Wayland);
+            assert!(
+                matches!(err, Err(ClipboardError::NoBackend)),
+                "got: {err:?}"
+            );
 
-        let err = copy_text("hello", DisplayServer::X11);
-        assert!(
-            matches!(err, Err(ClipboardError::NoBackend)),
-            "got: {err:?}"
-        );
+            let err = copy_text("hello", DisplayServer::X11);
+            assert!(
+                matches!(err, Err(ClipboardError::NoBackend)),
+                "got: {err:?}"
+            );
+        }
+        #[cfg(windows)]
+        {
+            let err = copy_text("hello");
+            assert!(
+                matches!(err, Err(ClipboardError::NoBackend)),
+                "got: {err:?}"
+            );
+        }
     }
 }

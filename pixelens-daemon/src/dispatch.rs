@@ -343,9 +343,14 @@ impl Dispatcher {
     }
 
     fn handle_status(&self, request: &IpcRequest) -> IpcResponse {
+        let display_str = self
+            .state
+            .display
+            .map(|d| format!("{:?}", d).to_lowercase())
+            .unwrap_or_else(|| "windows".to_string());
         let payload = serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
-            "display": format!("{:?}", self.state.display).to_lowercase(),
+            "display": display_str,
             "pipeline_ready": self.state.pipeline.is_some(),
         });
         match IpcResponse::ok(request.request_id.clone(), payload) {
@@ -507,7 +512,15 @@ impl Dispatcher {
             }
         };
 
-        match copy_text(&payload.text, self.state.display) {
+        #[cfg(unix)]
+        let result = copy_text(
+            &payload.text,
+            self.state.display.expect("display server required on Unix"),
+        );
+        #[cfg(windows)]
+        let result = copy_text(&payload.text);
+
+        match result {
             Ok(()) => {
                 // M7: fire success notification (non-blocking, best-effort)
                 notify_success(NotificationKind::TextCopied.message());
@@ -695,7 +708,7 @@ mod tests {
 
     fn test_state(backend: StubBackend) -> DaemonState {
         DaemonState {
-            display: DisplayServer::Wayland,
+            display: Some(DisplayServer::Wayland),
             pipeline: None,
             ocr: None,
             config: Config::default(),

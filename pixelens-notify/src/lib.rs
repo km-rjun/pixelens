@@ -202,6 +202,17 @@ pub fn notify_empty() {
     }
 }
 
+/// Windows clipboard copy using `arboard`.
+#[cfg(windows)]
+pub fn windows_clipboard_copy(text: &str) -> Result<(), crate::NotifyError> {
+    use arboard::Clipboard;
+    let mut clipboard =
+        Clipboard::new().map_err(|e| crate::NotifyError::BackendUnavailable(e.to_string()))?;
+    clipboard
+        .set_text(text.to_string())
+        .map_err(|e| crate::NotifyError::BackendUnavailable(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

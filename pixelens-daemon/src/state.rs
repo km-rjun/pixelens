@@ -1,12 +1,15 @@
 //! Daemon-wide state shared between the IPC server and the dispatcher.
 //!
-//! In v1 the state is small: a snapshot of the detected display server,
+//! In v1 the state is small: an optional snapshot of the detected display server,
 //! an optional capture pipeline, and an optional warm OCR engine. The
 //! pipeline may be absent if `slurp` / `grim` aren't installed; in that
 //! case `pixelens grab` returns a clear `MissingTool` error and the
 //! daemon keeps running for the other commands. Similarly the OCR engine
 //! is `None` when `tesseract` is unavailable — grabs still succeed, they
 //! just return no extracted text (M5).
+//!
+//! On Windows, display server detection is skipped entirely since the
+//! WinRT Graphics Capture Picker does not depend on WAYLAND_DISPLAY/DISPLAY.
 
 use std::sync::{Arc, Mutex};
 
@@ -36,7 +39,9 @@ pub struct OneShot {
 }
 
 pub struct DaemonState {
-    pub display: DisplayServer,
+    /// Display server (Wayland/X11). `None` on Windows where the WinRT
+    /// capture picker does not depend on a display server.
+    pub display: Option<DisplayServer>,
     /// `None` when the pipeline failed to construct (e.g. slurp/grim
     /// missing). All other commands are unaffected; only `grab`
     /// surfaces this.
@@ -61,7 +66,7 @@ pub struct DaemonState {
 
 impl DaemonState {
     pub fn new(
-        display: DisplayServer,
+        display: Option<DisplayServer>,
         pipeline: Option<GrabPipeline>,
         ocr: Option<TesseractOcrEngine>,
         config: Config,
@@ -122,7 +127,7 @@ mod tests {
     fn state_with(show_preview: bool) -> DaemonState {
         let mut config = Config::default();
         config.capture.show_preview = show_preview;
-        DaemonState::new(DisplayServer::Wayland, None, None, config, None, None)
+        DaemonState::new(Some(DisplayServer::Wayland), None, None, config, None, None)
     }
 
     #[test]
