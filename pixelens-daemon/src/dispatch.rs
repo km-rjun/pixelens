@@ -708,7 +708,11 @@ mod tests {
 
     fn test_state(backend: StubBackend) -> DaemonState {
         DaemonState {
-            display: if cfg!(unix) { Some(DisplayServer::Wayland) } else { None },
+            display: if cfg!(unix) {
+                Some(DisplayServer::Wayland)
+            } else {
+                None
+            },
             pipeline: None,
             ocr: None,
             config: Config::default(),

@@ -12,6 +12,9 @@
 //! long-term `CaptureBackend` enum keeps a Windows arm and unit tests run
 //! green without a Windows machine.
 
+#[cfg(windows)]
+use pixelens_core::{CaptureError, CaptureResult, Rect};
+
 /// Construct the Windows region selector for [`GrabPipeline`].
 ///
 /// On Windows this is the WinRT picker; the function itself is
@@ -34,48 +37,63 @@ pub fn screen_capturer() -> Box<dyn crate::slurp_grim::ScreenCapturer> {
 
 #[cfg(windows)]
 mod imp {
-    use pixelens_core::{CaptureError, CaptureResult, Rect};
+    use super::*;
     use std::path::Path;
+    use std::sync::mpsc;
+    use std::thread;
     use windows::core::Interface;
     use windows::Graphics::Capture::{GraphicsCaptureItem, GraphicsCapturePicker};
-    use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
-    use windows::Win32::Graphics::Direct3D11::ID3D11Device;
-    use windows::Win32::Graphics::Dxgi::IDXGIDevice;
     use windows::Win32::Graphics::Imaging::{GUID_ContainerFormatPng, IWICBitmapEncoder};
     use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
-    /// WinRT-backed region selector. Pops the system capture picker and,
-    /// once the user commits a selection, returns primary-monitor bounds
-    /// (the WinRT item carries no direct bounds API; the real frame's
-    /// `ContentSize` is read after the capture session opens).
+    /// WinRT-backed region selector. Pops the system capture picker on an
+    /// STA thread and returns primary-monitor bounds once the user commits
+    /// a selection. The WinRT item carries no direct bounds API; the real
+    /// frame's `ContentSize` is read after the capture session opens.
     pub(super) struct WinRtSelector;
 
     impl crate::slurp_grim::RegionSelector for WinRtSelector {
         fn select(&self) -> CaptureResult<Option<Rect>> {
-            let picker = GraphicsCapturePicker::new().map_err(|e| {
-                CaptureError::Selector(format!("failed to create capture picker: {e}"))
-            })?;
+            // Must run on STA thread for COM/WinRT picker
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || {
+                // Initialize COM as STA on this thread
+                let _ = unsafe {
+                    windows::Win32::System::Com::CoInitializeEx(
+                        std::ptr::null_mut(),
+                        windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+                    )
+                };
 
-            // `PickSingleItemAsync` must run on a UI/STA thread; the keyhook
-            // message loop provides that. Type-checked here, linked on Windows.
-            let _item: GraphicsCaptureItem = picker
-                .PickSingleItemAsync()
-                .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?
-                .get()
-                .map_err(|e| CaptureError::Selector(format!("no item selected: {e}")))?;
+                let result = (|| -> CaptureResult<Option<Rect>> {
+                    let picker = GraphicsCapturePicker::new().map_err(|e| {
+                        CaptureError::Selector(format!("failed to create capture picker: {e}"))
+                    })?;
 
-            // User dismissed the picker => no selection.
-            // (Detection of an empty selection is handled by the host; here
-            // we treat a returned item as "capture primary monitor".)
-            let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-            let h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-            if w <= 0 || h <= 0 {
-                return Err(CaptureError::Selector(
-                    "failed to read primary monitor metrics".into(),
-                ));
-            }
+                    // PickSingleItemAsync must run on STA thread
+                    let item: GraphicsCaptureItem = picker
+                        .PickSingleItemAsync()
+                        .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?
+                        .get()
+                        .map_err(|e| CaptureError::Selector(format!("no item selected: {e}")))?;
 
-            Ok(Some(Rect::new(0, 0, w as u32, h as u32)))
+                    // User dismissed the picker => no selection
+                    let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+                    let h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+                    if w <= 0 || h <= 0 {
+                        return Err(CaptureError::Selector(
+                            "failed to read primary monitor metrics".into(),
+                        ));
+                    }
+
+                    Ok(Some(Rect::new(0, 0, w as u32, h as u32)))
+                })();
+
+                let _ = tx.send(result);
+            });
+
+            rx.recv()
+                .map_err(|e| CaptureError::Selector(format!("STA thread failed: {e}")))?
         }
     }
 
@@ -90,9 +108,11 @@ mod imp {
             // ID3D11Device/IDXGIDevice -> WIC Bitmap -> PNG via
             // IWICBitmapEncoder / GUID_ContainerFormatPng). Verified on a
             // Windows host; here we only type-check the wiring.
-            let _device: Option<ID3D11Device> = None;
-            let _dxgi: Option<IDXGIDevice> = _device.as_ref().and_then(|d| d.cast().ok());
-            let _d3d: Option<IDirect3DDevice> = _device.as_ref().and_then(|d| d.cast().ok());
+            let _device: Option<windows::Win32::Graphics::Direct3D11::ID3D11Device> = None;
+            let _dxgi: Option<windows::Win32::Graphics::Dxgi::IDXGIDevice> =
+                _device.as_ref().and_then(|d| d.cast().ok());
+            let _d3d: Option<windows::Graphics::DirectX::Direct3D11::IDirect3DDevice> =
+                _device.as_ref().and_then(|d| d.cast().ok());
             let _encoder: Option<IWICBitmapEncoder> = None;
             let _fmt = GUID_ContainerFormatPng;
 
