@@ -60,7 +60,7 @@ mod imp {
                 // Initialize COM as STA on this thread
                 let _ = unsafe {
                     windows::Win32::System::Com::CoInitializeEx(
-                        std::ptr::null_mut(),
+                        Some(std::ptr::null_mut()),
                         windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
                     )
                 };
