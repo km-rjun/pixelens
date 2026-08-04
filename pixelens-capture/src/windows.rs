@@ -58,36 +58,49 @@ mod imp {
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
                 // Initialize COM as STA on this thread
-                let _ = unsafe {
+                let hr = unsafe {
                     windows::Win32::System::Com::CoInitializeEx(
                         Some(std::ptr::null_mut()),
                         windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
                     )
                 };
+                // If COM already initialized as MTA, we can't re-init as STA.
+                // RPC_E_CHANGED_MODE (0x80010106) means mode already set.
+                // S_OK (0) or S_FALSE (1) means success (already STA or just set).
+                let com_ok = matches!(hr.0, 0 | 1 | 0x80010106);
 
-                let result = (|| -> CaptureResult<Option<Rect>> {
-                    let picker = GraphicsCapturePicker::new().map_err(|e| {
-                        CaptureError::Selector(format!("failed to create capture picker: {e}"))
-                    })?;
+                let result = if !com_ok {
+                    Err(CaptureError::Selector(format!(
+                        "COM initialization failed: HRESULT 0x{:08X}",
+                        hr.0
+                    )))
+                } else {
+                    (|| -> CaptureResult<Option<Rect>> {
+                        let picker = GraphicsCapturePicker::new().map_err(|e| {
+                            CaptureError::Selector(format!("failed to create capture picker: {e}"))
+                        })?;
 
-                    // PickSingleItemAsync must run on STA thread
-                    let item: GraphicsCaptureItem = picker
-                        .PickSingleItemAsync()
-                        .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?
-                        .get()
-                        .map_err(|e| CaptureError::Selector(format!("no item selected: {e}")))?;
+                        // PickSingleItemAsync must run on STA thread
+                        let item: GraphicsCaptureItem = picker
+                            .PickSingleItemAsync()
+                            .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?
+                            .get()
+                            .map_err(|e| {
+                                CaptureError::Selector(format!("no item selected: {e}"))
+                            })?;
 
-                    // User dismissed the picker => no selection
-                    let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-                    let h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-                    if w <= 0 || h <= 0 {
-                        return Err(CaptureError::Selector(
-                            "failed to read primary monitor metrics".into(),
-                        ));
-                    }
+                        // User dismissed the picker => no selection
+                        let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+                        let h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+                        if w <= 0 || h <= 0 {
+                            return Err(CaptureError::Selector(
+                                "failed to read primary monitor metrics".into(),
+                            ));
+                        }
 
-                    Ok(Some(Rect::new(0, 0, w as u32, h as u32)))
-                })();
+                        Ok(Some(Rect::new(0, 0, w as u32, h as u32)))
+                    })()
+                };
 
                 let _ = tx.send(result);
             });

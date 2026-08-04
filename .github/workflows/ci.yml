@@ -5,6 +5,7 @@ on:
     branches: [main, features/**]
   pull_request:
     branches: [main]
+  workflow_dispatch:  # Manual trigger for release
 
 env:
   CARGO_TERM_COLOR: always
@@ -53,7 +54,7 @@ jobs:
       - name: Build release .deb
         run: |
           chmod +x scripts/build_deb.sh
-          ./scripts/build_deb.sh ${{ github.ref_name == 'main' && github.ref_name || 'dev' }}
+          ./scripts/build_deb.sh ${{ github.ref_name == 'main' && 'release' || 'dev' }}
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -81,17 +82,20 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Install tesseract (for OCR tests)
+        run: choco install tesseract --version=5.3.3 -y
+
       - name: Build
-        run: cargo build --workspace --locked --target x86_64-pc-windows-msvc
+        run: cargo build --workspace --target x86_64-pc-windows-msvc
 
       - name: Test
-        run: cargo test --workspace --locked --target x86_64-pc-windows-msvc
+        run: cargo test --workspace --target x86_64-pc-windows-msvc
 
       - name: Clippy
-        run: cargo clippy --workspace --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+        run: cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
 
       - name: Build release
-        run: cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
+        run: cargo build --workspace --release --target x86_64-pc-windows-msvc
 
       - name: Create Windows zip
         run: |
@@ -104,7 +108,7 @@ jobs:
           path: pixelens-windows-x64.zip
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     needs: [linux, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -122,11 +126,17 @@ jobs:
           name: pixelens-windows
           path: artifacts/windows
 
+      - name: Extract version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           files: |
