@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $packageName = 'pixelens'
 $url = 'https://github.com/km-rjun/pixelens/releases/download/v0.1.4/pixelens-0.1.4-windows-x64.zip'
-$checksum = ''  # Update with SHA256 checksum when releasing
+$checksum = '1680c56dc89e91f7642a4723c45ac8fb99ee3cd6114dd0c11011d40fec52b443'
 $checksumType = 'sha256'
 $toolsDir = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
 $installDir = Join-Path $toolsDir 'pixelens'

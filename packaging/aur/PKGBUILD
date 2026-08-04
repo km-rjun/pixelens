@@ -27,7 +27,7 @@ conflicts=('pixelens')
 source=(
     "pixelens_${pkgver}_amd64.deb::https://github.com/km-rjun/pixelens/releases/download/v${pkgver}/pixelens_${pkgver}_amd64.deb"
 )
-sha256sums=('SKIP')  # Update with actual checksum when releasing
+sha256sums=('73afa8ad29e8244aeaa36b15ad537624956f7b41738fb2c0473a74dbd2901e13')
 
 package() {
     # Extract .deb
