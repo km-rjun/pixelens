@@ -1,0 +1,22 @@
+{
+  "version": "0.1.4",
+  "description": "Screen capture, OCR, and search tool for Windows. Uses WinRT Graphics Capture Picker (same as Win+Shift+S) for region selection, Tesseract for OCR, and supports reverse image search via Google Lens.",
+  "homepage": "https://github.com/km-rjun/pixelens",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/km-rjun/pixelens/releases/download/v0.1.4/pixelens-0.1.4-windows-x64.zip",
+      "hash": ""
+    }
+  },
+  "bin": [
+    "pixelens.exe",
+    "pixelensd.exe",
+    "pixelens-keyhook.exe"
+  ],
+  "notes": [
+    "Run 'pixelens install' to register the daemon as a scheduled task (requires admin).",
+    "Run 'pixelensd.exe' to start the daemon manually.",
+    "Default hotkey: Win+Shift+T"
+  ]
+}

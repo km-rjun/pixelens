@@ -1,0 +1,39 @@
+# Maintainer: km-rjun <github.com/km-rjun>
+pkgname=pixelens-bin
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="Screen capture, OCR, and search tool (binary from .deb release)"
+arch=('x86_64')
+url="https://github.com/km-rjun/pixelens"
+license=('MIT')
+depends=(
+    'slurp'
+    'grim'
+    'wl-clipboard'
+    'xclip'
+    'tesseract'
+    'libnotify'
+)
+optdepends=(
+    'hyprland: Wayland compositor with monitor detection support'
+    'wlr-randr: Monitor detection on wlroots compositors'
+    'xdotool: Monitor detection on X11'
+    'xrandr: Monitor detection on X11'
+    'fuzzel: Menu backend'
+    'wofi: Menu backend'
+)
+provides=('pixelens')
+conflicts=('pixelens')
+source=(
+    "pixelens_${pkgver}_amd64.deb::https://github.com/km-rjun/pixelens/releases/download/v${pkgver}/pixelens_${pkgver}_amd64.deb"
+)
+sha256sums=('SKIP')  # Update with actual checksum when releasing
+
+package() {
+    # Extract .deb
+    ar x "pixelens_${pkgver}_amd64.deb"
+    tar -xf data.tar.zst -C "${pkgdir}" 2>/dev/null || tar -xf data.tar.xz -C "${pkgdir}" 2>/dev/null || tar -xf data.tar.gz -C "${pkgdir}" 2>/dev/null
+
+    # systemd user unit is already in the .deb at /usr/lib/systemd/user/pixelensd.service
+    # No additional steps needed - the .deb contains everything
+}

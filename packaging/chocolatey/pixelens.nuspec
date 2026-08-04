@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>pixelens</id>
+    <version>0.1.4</version>
+    <title>Pixelens</title>
+    <authors>km-rjun</authors>
+    <owners>km-rjun</owners>
+    <projectUrl>https://github.com/km-rjun/pixelens</projectUrl>
+    <licenseUrl>https://github.com/km-rjun/pixelens/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Screen capture, OCR, and search tool for Windows. Uses WinRT Graphics Capture Picker (same as Win+Shift+S) for region selection, Tesseract for OCR, and supports reverse image search via Google Lens.</description>
+    <copyright>2024 km-rjun</copyright>
+    <tags>screen-capture ocr screenshot snipping-tool winrt tesseract</tags>
+    <releaseNotes>v0.1.4 - Windows grab fix (STA thread for WinRT picker), Windows clipboard via arboard, pixelens install subcommand for scheduled task registration</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
