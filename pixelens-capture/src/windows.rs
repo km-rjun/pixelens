@@ -44,7 +44,11 @@ mod imp {
     use windows::core::Interface;
     use windows::Graphics::Capture::{GraphicsCaptureItem, GraphicsCapturePicker};
     use windows::Win32::Graphics::Imaging::{GUID_ContainerFormatPng, IWICBitmapEncoder};
-    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetMessageW, GetSystemMetrics, TranslateMessage, MSG, SM_CXSCREEN,
+        SM_CYSCREEN,
+    };
 
     /// WinRT-backed region selector. Pops the system capture picker on an
     /// STA thread and returns primary-monitor bounds once the user commits
@@ -54,16 +58,11 @@ mod imp {
 
     impl crate::slurp_grim::RegionSelector for WinRtSelector {
         fn select(&self) -> CaptureResult<Option<Rect>> {
-            // Must run on STA thread for COM/WinRT picker
+            // Must run on STA thread with message pump for COM/WinRT picker
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
                 // Initialize COM as STA on this thread
-                let hr = unsafe {
-                    windows::Win32::System::Com::CoInitializeEx(
-                        Some(std::ptr::null_mut()),
-                        windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
-                    )
-                };
+                let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
                 // If COM already initialized as MTA, we can't re-init as STA.
                 // RPC_E_CHANGED_MODE (0x80010106) means mode already set.
                 // S_OK (0) or S_FALSE (1) means success (already STA or just set).
@@ -80,14 +79,27 @@ mod imp {
                             CaptureError::Selector(format!("failed to create capture picker: {e}"))
                         })?;
 
-                        // PickSingleItemAsync must run on STA thread
-                        let item: GraphicsCaptureItem = picker
+                        // PickSingleItemAsync must run on STA thread with message pump
+                        let async_op = picker
                             .PickSingleItemAsync()
-                            .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?
-                            .get()
-                            .map_err(|e| {
-                                CaptureError::Selector(format!("no item selected: {e}"))
-                            })?;
+                            .map_err(|e| CaptureError::Selector(format!("picker failed: {e}")))?;
+
+                        // Run message pump while waiting for async operation to complete
+                        let mut msg = MSG::default();
+                        while async_op.Status() != windows::Foundation::AsyncStatus::Completed {
+                            unsafe {
+                                if GetMessageW(&mut msg, None, 0, 0).into() {
+                                    TranslateMessage(&msg);
+                                    DispatchMessageW(&msg);
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        let item: GraphicsCaptureItem = async_op.GetResults().map_err(|e| {
+                            CaptureError::Selector(format!("no item selected: {e}"))
+                        })?;
 
                         // User dismissed the picker => no selection
                         let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
@@ -101,6 +113,9 @@ mod imp {
                         Ok(Some(Rect::new(0, 0, w as u32, h as u32)))
                     })()
                 };
+
+                // Uninitialize COM on this thread
+                unsafe { CoUninitialize() };
 
                 let _ = tx.send(result);
             });
