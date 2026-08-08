@@ -66,7 +66,7 @@ mod imp {
                 // If COM already initialized as MTA, we can't re-init as STA.
                 // RPC_E_CHANGED_MODE (0x80010106) means mode already set.
                 // S_OK (0) or S_FALSE (1) means success (already STA or just set).
-                let com_ok = matches!(hr.0, 0 | 1 | 0x80010106);
+                let com_ok = matches!(hr.0, 0 | 1 | -2147417850i32);
 
                 let result = if !com_ok {
                     Err(CaptureError::Selector(format!(
@@ -92,7 +92,7 @@ mod imp {
                                 Ok(windows::Foundation::AsyncStatus::Completed) => break,
                                 Ok(_) => unsafe {
                                     if GetMessageW(&mut msg, None, 0, 0).into() {
-                                        TranslateMessage(&msg);
+                                        let _ = TranslateMessage(&msg);
                                         DispatchMessageW(&msg);
                                     } else {
                                         break;
