@@ -86,13 +86,22 @@ mod imp {
 
                         // Run message pump while waiting for async operation to complete
                         let mut msg = MSG::default();
-                        while async_op.Status() != windows::Foundation::AsyncStatus::Completed {
-                            unsafe {
-                                if GetMessageW(&mut msg, None, 0, 0).into() {
-                                    TranslateMessage(&msg);
-                                    DispatchMessageW(&msg);
-                                } else {
-                                    break;
+                        loop {
+                            let status = async_op.Status();
+                            match status {
+                                Ok(windows::Foundation::AsyncStatus::Completed) => break,
+                                Ok(_) => unsafe {
+                                    if GetMessageW(&mut msg, None, 0, 0).into() {
+                                        TranslateMessage(&msg);
+                                        DispatchMessageW(&msg);
+                                    } else {
+                                        break;
+                                    }
+                                },
+                                Err(e) => {
+                                    return Err(CaptureError::Selector(format!(
+                                        "async status error: {e}"
+                                    )));
                                 }
                             }
                         }
