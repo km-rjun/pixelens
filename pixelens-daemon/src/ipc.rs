@@ -129,23 +129,35 @@ pub async fn bind() -> Result<IpcListener, ServerError> {
     }
 }
 
-/// Accept and serve connections forever.
-pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
+/// Accept and serve connections until shutdown signal received.
+pub async fn serve(
+    listener: IpcListener,
+    dispatcher: Arc<Dispatcher>,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) {
     #[cfg(unix)]
     {
         let IpcListener::Unix(listener) = listener;
         loop {
-            match listener.accept().await {
-                Ok((stream, _addr)) => {
-                    let dispatcher = Arc::clone(&dispatcher);
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, dispatcher).await {
-                            tracing::warn!(error = %e, "connection handler exited with error");
+            tokio::select! {
+                accept_result = listener.accept() => {
+                    match accept_result {
+                        Ok((stream, _addr)) => {
+                            let dispatcher = Arc::clone(&dispatcher);
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_connection(stream, dispatcher).await {
+                                    tracing::warn!(error = %e, "connection handler exited with error");
+                                }
+                            });
                         }
-                    });
+                        Err(e) => {
+                            tracing::error!(error = %e, "accept failed");
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::error!(error = %e, "accept failed");
+                _ = shutdown_rx.recv() => {
+                    tracing::info!("shutdown signal received, stopping IPC server");
+                    break;
                 }
             }
         }
@@ -155,31 +167,37 @@ pub async fn serve(listener: IpcListener, dispatcher: Arc<Dispatcher>) {
     {
         let IpcListener::Windows(mut server) = listener;
         loop {
-            // Wait for a client to connect. After connect() succeeds,
-            // the server itself implements AsyncRead + AsyncWrite.
-            if let Err(e) = server.connect().await {
-                tracing::error!(error = %e, "client connect failed");
-                continue;
-            }
+            tokio::select! {
+                connect_result = server.connect() => {
+                    if let Err(e) = connect_result {
+                        tracing::error!(error = %e, "client connect failed");
+                        continue;
+                    }
 
-            // Spawn a task to handle this connection using the server as the stream.
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                if let Err(e) = handle_connection(server, dispatcher).await {
-                    tracing::warn!(error = %e, "connection handler exited with error");
+                    // Spawn a task to handle this connection using the server as the stream.
+                    let dispatcher = Arc::clone(&dispatcher);
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_connection(server, dispatcher).await {
+                            tracing::warn!(error = %e, "connection handler exited with error");
+                        }
+                    });
+
+                    // Create a new server for the next connection
+                    use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+                    let pipe_path = windows_pipe_path();
+                    server = match ServerOptions::new().create(&pipe_path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(error = %e, "failed to recreate named pipe server");
+                            break;
+                        }
+                    };
                 }
-            });
-
-            // Create a new server for the next connection
-            use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
-            let pipe_path = windows_pipe_path();
-            server = match ServerOptions::new().create(&pipe_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to recreate named pipe server");
+                _ = shutdown_rx.recv() => {
+                    tracing::info!("shutdown signal received, stopping IPC server");
                     break;
                 }
-            };
+            }
         }
     }
 }

@@ -156,7 +156,7 @@ impl GrabPipeline {
         let region = self
             .selector
             .select_with_monitor(monitor.as_ref())
-            .map_err(|e| grab_error_from_capture(&e, "slurp"))?;
+            .map_err(|e| grab_error_from_capture(&e, "selector"))?;
         let region = match region {
             Some(r) => r,
             None => return Ok(GrabOutcome::Cancelled),
@@ -168,7 +168,7 @@ impl GrabPipeline {
         // 3. capture (with optional monitor constraint for grim)
         self.capturer
             .capture_with_monitor(region, &path, monitor.as_ref())
-            .map_err(|e| grab_error_from_capture(&e, "grim"))?;
+            .map_err(|e| grab_error_from_capture(&e, "capturer"))?;
 
         // 4. verify file size (grim normally errors on its own, but
         //    a 0-byte file means something went very wrong).

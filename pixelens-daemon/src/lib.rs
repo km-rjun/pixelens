@@ -25,8 +25,8 @@ pub fn init_tracing() {
         .try_init();
 }
 
-/// Run the daemon. Blocks forever (the IPC accept loop never returns).
-pub async fn run() -> anyhow::Result<()> {
+/// Run the daemon. Blocks until shutdown signal received.
+pub async fn run(shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> anyhow::Result<()> {
     init_tracing();
 
     tracing::info!(version = VERSION, "pixelensd starting");
@@ -84,7 +84,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let pipeline = match pixelens_capture::GrabPipeline::new() {
         Ok(p) => {
-            tracing::info!("capture pipeline ready (slurp + grim)");
+            tracing::info!("capture pipeline ready");
             Some(p)
         }
         Err(e) => {
@@ -157,6 +157,7 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let dispatcher = Arc::new(dispatch::Dispatcher::new(state));
 
-    ipc::serve(listener, dispatcher).await;
+    // Serve with shutdown signal
+    ipc::serve(listener, dispatcher, shutdown_rx).await;
     Ok(())
 }

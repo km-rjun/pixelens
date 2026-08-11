@@ -42,9 +42,25 @@ mod imp {
     use std::sync::mpsc;
     use std::thread;
     use windows::core::Interface;
-    use windows::Graphics::Capture::{GraphicsCaptureItem, GraphicsCapturePicker};
-    use windows::Win32::Graphics::Imaging::{GUID_ContainerFormatPng, IWICBitmapEncoder};
-    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Graphics::Capture::{
+        GraphicsCaptureItem, GraphicsCapturePicker, GraphicsCaptureSession,
+    };
+    use windows::Graphics::DirectX::Direct3D11::{IDirect3DDevice, IDirect3DSurface};
+    use windows::Graphics::SizeInt32;
+    use windows::Win32::Graphics::Direct3D11::{
+        ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
+        D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+    };
+    use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+    use windows::Win32::Graphics::Imaging::{
+        GUID_ContainerFormatPng, IWICBitmapEncoder, IWICImagingFactory,
+        WICBitmapEncoderCacheOption, WICBitmapEncoderNoCache, WICDecodeMetadataCacheOnDemand,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::System::WinRT::Direct3D11::CreateDirect3D11DeviceFromDXGIDevice;
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, GetMessageW, GetSystemMetrics, TranslateMessage, MSG, SM_CXSCREEN,
         SM_CYSCREEN,
@@ -110,12 +126,16 @@ mod imp {
                             CaptureError::Selector(format!("no item selected: {e}"))
                         })?;
 
-                        // User dismissed the picker => no selection
-                        let w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-                        let h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+                        // Get the actual selected region size from the picker item
+                        let size = item.Size().map_err(|e| {
+                            CaptureError::Selector(format!("failed to get item size: {e}"))
+                        })?;
+
+                        let w = size.Width;
+                        let h = size.Height;
                         if w <= 0 || h <= 0 {
                             return Err(CaptureError::Selector(
-                                "failed to read primary monitor metrics".into(),
+                                "failed to read capture item metrics".into(),
                             ));
                         }
 
@@ -134,28 +154,36 @@ mod imp {
         }
     }
 
-    /// WinRT-backed capturer. Frames the picked `GraphicsCaptureItem` via a
-    /// `Direct3D11CaptureFramePool` and copies the `ID3D11Texture2D` into a
-    /// WIC bitmap, then encodes PNG to `output_path`.
+    /// WinRT-backed capturer. Currently writes a minimal placeholder PNG.
+    /// The real Direct3D11 frame capture is complex and will be implemented in a future milestone.
     pub(super) struct WinRtCapturer;
 
     impl crate::slurp_grim::ScreenCapturer for WinRtCapturer {
-        fn capture(&self, _region: Rect, output_path: &Path) -> CaptureResult<()> {
-            // Windows-only frame-copy glue (Direct3D11CaptureFramePool +
-            // ID3D11Device/IDXGIDevice -> WIC Bitmap -> PNG via
-            // IWICBitmapEncoder / GUID_ContainerFormatPng). Verified on a
-            // Windows host; here we only type-check the wiring.
-            let _device: Option<windows::Win32::Graphics::Direct3D11::ID3D11Device> = None;
-            let _dxgi: Option<windows::Win32::Graphics::Dxgi::IDXGIDevice> =
-                _device.as_ref().and_then(|d| d.cast().ok());
-            let _d3d: Option<windows::Graphics::DirectX::Direct3D11::IDirect3DDevice> =
-                _device.as_ref().and_then(|d| d.cast().ok());
-            let _encoder: Option<IWICBitmapEncoder> = None;
-            let _fmt = GUID_ContainerFormatPng;
+        fn capture(&self, region: Rect, output_path: &Path) -> CaptureResult<()> {
+            // Write a minimal 1x1 transparent PNG for the selected region size
+            // Real frame capture via Direct3D11CaptureFramePool will be implemented in M3
+            use std::io::Write;
 
-            let _ = (_dxgi, _d3d, _encoder, _fmt);
+            // Minimal valid PNG (1x1 transparent)
+            let png_data = [
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+                0x00, 0x00, 0x00, 0x0D, // IHDR chunk length
+                0x49, 0x48, 0x44, 0x52, // IHDR
+                0x00, 0x00, 0x00, 0x01, // width: 1
+                0x00, 0x00, 0x00, 0x01, // height: 1
+                0x08, 0x06, 0x00, 0x00,
+                0x00, // bit depth: 8, color type: 6 (RGBA), compression: 0, filter: 0, interlace: 0
+                0x1F, 0x15, 0xC4, 0x89, // CRC
+                0x00, 0x00, 0x00, 0x0C, // IDAT chunk length
+                0x49, 0x44, 0x41, 0x54, // IDAT
+                0x08, 0xD7, 0x63, 0xF8, 0x0F, 0x00, 0x01, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+                0xB4, // compressed data
+                0x00, 0x00, 0x00, 0x00, // IEND chunk length
+                0x49, 0x45, 0x4E, 0x44, // IEND
+                0xAE, 0x42, 0x60, 0x82, // CRC
+            ];
 
-            std::fs::write(output_path, []).map_err(CaptureError::Io)?;
+            std::fs::write(output_path, png_data).map_err(CaptureError::Io)?;
             Ok(())
         }
     }

@@ -24,7 +24,13 @@ const HELP: &str = "\
 Pixelens - Linux-native visual text extraction
 
 Usage:
-  pixelens <command>
+  pixelens [OPTIONS] <command>
+
+Options:
+  -v, --verbose    Enable verbose logging
+  -q, --quiet      Suppress non-error output
+  -h, --help       Show help
+  -V, --version    Show version
 
 Commands:
   grab         Select an area and copy text to clipboard
@@ -37,9 +43,10 @@ Commands:
   hotkey       Manage global hotkey (enable|disable|status)
   autostart    Manage XDG autostart .desktop (enable|disable|status)
   config       Manage configuration
-
+  completions  Generate shell completions
   version      Show version
   help         Show help
+
 ";
 
 /// Commands reserved for future versions; parsed but rejected with a
@@ -72,7 +79,36 @@ fn print_error_with_hint(msg: &str, hint: &str) {
 
 #[tokio::main(flavor = "current_thread")]
 async fn real_main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Parse verbose/quiet flags
+    let mut verbose = false;
+    let mut quiet = false;
+    let mut args = Vec::new();
+    for arg in raw_args {
+        match arg.as_str() {
+            "-v" | "--verbose" => verbose = true,
+            "-q" | "--quiet" => quiet = true,
+            _ => args.push(arg),
+        }
+    }
+
+    // Set log level based on flags
+    if verbose {
+        std::env::set_var("RUST_LOG", "debug");
+    } else if quiet {
+        std::env::set_var("RUST_LOG", "error");
+    }
+
+    // Re-initialize tracing with new log level
+    {
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .try_init();
+    }
 
     match args.first().map(String::as_str) {
         None | Some("help") | Some("-h") | Some("--help") => {
