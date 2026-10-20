@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use tokio::sync::Notify;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -36,7 +39,7 @@ impl IpcServer {
         socket_dir.join("pixelens.sock")
     }
 
-    pub async fn start(&self) -> Result<(), IpcError> {
+    pub async fn start(&self, shutdown: Arc<Notify>) -> Result<(), IpcError> {
         if self.socket_path.exists() {
             std::fs::remove_file(&self.socket_path)?;
         }
@@ -49,19 +52,31 @@ impl IpcServer {
         log::info!("IPC server listening on {:?}", self.socket_path);
 
         loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream).await {
-                            log::error!("Connection error: {}", e);
+            tokio::select! {
+                accept = listener.accept() => {
+                    match accept {
+                        Ok((stream, _)) => {
+                            let shutdown = shutdown.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_connection(stream, shutdown).await {
+                                    log::error!("Connection error: {}", e);
+                                }
+                            });
                         }
-                    });
+                        Err(e) => {
+                            log::error!("Accept error: {}", e);
+                        }
+                    }
                 }
-                Err(e) => {
-                    log::error!("Accept error: {}", e);
+                _ = shutdown.notified() => {
+                    log::info!("Shutdown signal received");
+                    break;
                 }
             }
         }
+
+        self.stop();
+        Ok(())
     }
 
     pub fn stop(&self) {
@@ -78,7 +93,7 @@ impl Default for IpcServer {
     }
 }
 
-async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
+async fn handle_connection(stream: UnixStream, shutdown: Arc<Notify>) -> Result<(), IpcError> {
     let (reader, mut writer) = stream.into_split();
     let reader = BufReader::new(reader);
     let mut lines = reader.lines();
@@ -89,6 +104,7 @@ async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
         .map_err(|e| IpcError::ReadFailed(e.to_string()))?
     {
         let request: Request = serde_json::from_str(&line)?;
+        let is_stop = matches!(request, Request::Stop);
         let response = handle_request(request).await;
         let response_json = serde_json::to_string(&response)?;
         writer
@@ -99,6 +115,9 @@ async fn handle_connection(stream: UnixStream) -> Result<(), IpcError> {
             .write_all(b"\n")
             .await
             .map_err(|e| IpcError::WriteFailed(e.to_string()))?;
+        if is_stop {
+            shutdown.notify_one();
+        }
     }
 
     Ok(())

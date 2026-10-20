@@ -15,6 +15,7 @@ async fn main() {
     let server = IpcServer::new();
     let notify = Arc::new(Notify::new());
     let notify_clone = notify.clone();
+    let server_task_notify = notify.clone();
 
     // Handle shutdown signal
     tokio::spawn(async move {
@@ -25,12 +26,12 @@ async fn main() {
 
     let server_clone = server.clone();
     tokio::spawn(async move {
-        notify.notified().await;
+        server_task_notify.notified().await;
         server_clone.stop();
         std::process::exit(0);
     });
 
-    if let Err(e) = server.start().await {
+    if let Err(e) = server.start(notify).await {
         log::error!("Daemon error: {}", e);
         std::process::exit(1);
     }

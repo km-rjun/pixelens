@@ -94,7 +94,7 @@ async fn main() {
         Commands::Grab => cmd_grab().await,
         Commands::Copy => cmd_copy().await,
         Commands::Search => cmd_search().await,
-        Commands::Ai { prompt } => cmd_ai(&prompt.unwrap_or_default(), None).await,
+        Commands::Ai { prompt } => cmd_ai(&prompt.unwrap_or_default()).await,
         Commands::Translate { to } => cmd_translate(&to).await,
         Commands::Image => cmd_image().await,
         Commands::Check => cmd_check(),
@@ -121,9 +121,9 @@ async fn main() {
 async fn do_grab() -> Result<(String, Option<String>), i32> {
     let client = IpcClient::new();
     match client.grab(false, None).await {
-        Ok((_image_path, text, _ai_response)) => {
+        Ok((image_path, text, _ai_response)) => {
             if let Some(t) = &text {
-                Ok((t.clone(), Some(t.clone())))
+                Ok((t.clone(), Some(image_path)))
             } else {
                 eprintln!("No text extracted from capture");
                 Err(1)
@@ -146,7 +146,7 @@ async fn do_grab() -> Result<(String, Option<String>), i32> {
 }
 
 async fn cmd_grab() -> i32 {
-    let (text, _image_path) = match do_grab().await {
+    let (text, image_path) = match do_grab().await {
         Ok(v) => v,
         Err(code) => return code,
     };
@@ -199,7 +199,7 @@ async fn cmd_grab() -> i32 {
             match client
                 .send(pixelens_core::ipc::protocol::Request::Ai {
                     prompt,
-                    image_path: None,
+                    image_path: image_path.clone(),
                 })
                 .await
             {
@@ -301,9 +301,20 @@ async fn cmd_search() -> i32 {
     }
 }
 
-async fn cmd_ai(prompt: &str, image: Option<&str>) -> i32 {
+async fn cmd_ai(prompt: &str) -> i32 {
+    let (ocr_text, image_path) = match do_grab().await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+
+    let ai_prompt = if prompt.trim().is_empty() {
+        format!("Describe or explain the following text:\n\n{}", ocr_text)
+    } else {
+        format!("{}\n\n{}", prompt, ocr_text)
+    };
+
     let client = IpcClient::new();
-    match client.ai(prompt, image).await {
+    match client.ai(&ai_prompt, image_path.as_deref()).await {
         Ok((content, _)) => {
             println!("{}", content);
             0

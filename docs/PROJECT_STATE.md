@@ -31,6 +31,7 @@ Pixelens lets the user select content visible on screen and immediately copy, se
 - Quota exhaustion error reporting (insufficient_quota)
 - `pixelens check` diagnostic command
 - CI passing on GitHub Actions
+- Selection-first `pixelens ai` forwards OCR text and screenshot when available
 
 ## Current Command Semantics
 
