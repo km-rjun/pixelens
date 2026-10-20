@@ -17,6 +17,14 @@ use super::IpcError;
 
 static CAPTURING: AtomicBool = AtomicBool::new(false);
 
+struct CapturingGuard;
+
+impl Drop for CapturingGuard {
+    fn drop(&mut self) {
+        CAPTURING.store(false, Ordering::SeqCst);
+    }
+}
+
 #[derive(Clone)]
 pub struct IpcServer {
     socket_path: PathBuf,
@@ -160,9 +168,10 @@ async fn handle_request(request: Request) -> Response {
                 return Response::Error("Capture already in progress".to_string());
             }
 
+            let _capturing_guard = CapturingGuard;
+
             let result = handle_grab(search, ai).await;
 
-            CAPTURING.store(false, Ordering::SeqCst);
             result
         }
         Request::Ocr {

@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::actions::ActionHandler;
 use crate::config::Config;
@@ -16,11 +17,23 @@ pub struct WlCopyClipboard;
 
 impl ClipboardCopier for WlCopyClipboard {
     fn copy_image(&self, path: &str) -> Result<(), String> {
-        let status = Command::new("wl-copy")
+        let data = fs::read(path).map_err(|e| format!("Failed to read image: {}", e))?;
+
+        let mut child = Command::new("wl-copy")
             .args(["--type", "image/png"])
-            .arg(path)
-            .status()
+            .stdin(Stdio::piped())
+            .spawn()
             .map_err(|e| format!("Failed to run wl-copy: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(e) = stdin.write_all(&data) {
+                return Err(format!("Failed to pipe image to wl-copy: {}", e));
+            }
+        }
+
+        let status = child
+            .wait()
+            .map_err(|e| format!("Failed to wait for wl-copy: {}", e))?;
         if status.success() {
             Ok(())
         } else {

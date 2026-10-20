@@ -15,7 +15,7 @@ A Linux-native visual search and OCR utility.
 | Translate | Working |
 | Daemon with IPC | Working |
 | Reverse image search | MVP (save + upload page) |
-| X11 support | Not implemented |
+| X11 support | Experimental/untested |
 
 ## Architecture
 
@@ -174,6 +174,8 @@ Set `menu_backend` in config to force a specific backend.
 `pixelens image` saves the captured screenshot locally and opens the Google Lens upload page.
 
 **Privacy note**: Screenshots may contain private data. Automatic upload to external services is disabled by default. To enable automatic upload, configure `image_upload_provider` in the config file.
+
+`reverse_image_provider` selects where image search is opened (currently `google_lens`). `image_upload_provider` and `image_upload_url` are separate and enable automatic upload; if `image_upload_provider` is empty, Pixelens only saves the image and opens the upload page.
 
 ### API Key
 

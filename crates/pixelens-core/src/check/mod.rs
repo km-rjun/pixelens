@@ -233,6 +233,7 @@ pub fn run_check() -> CheckResult {
     result.push(check_tool("slurp"));
     result.push(check_tool("wl-copy"));
     result.push(check_tool("xdg-open"));
+    result.push(check_tool("tesseract"));
 
     result.push(check_wayland_session());
     result.push(check_daemon_running());

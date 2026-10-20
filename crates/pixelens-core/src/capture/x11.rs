@@ -35,8 +35,17 @@ impl ScreenCapture for X11Capture {
             region.width, region.height, region.x, region.y
         );
 
+        let output_path = format!(
+            "/tmp/pixelens_x11_{}_{}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
         let output = Command::new("scrot")
-            .args(["-a", &geometry, "-o", "/tmp/pixelens_x11.png"])
+            .args(["-a", &geometry, "-o", &output_path])
             .output()
             .map_err(|e| CaptureError::ToolFailed(format!("Failed to run scrot: {}", e)))?;
 
@@ -48,7 +57,7 @@ impl ScreenCapture for X11Capture {
             )));
         }
 
-        let file_path = "/tmp/pixelens_x11.png".to_string();
+        let file_path = output_path;
 
         Ok(CaptureResult {
             image_path: file_path,
