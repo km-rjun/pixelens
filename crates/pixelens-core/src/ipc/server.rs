@@ -10,7 +10,7 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::actions::get_handler;
 use crate::capture::{check_tools as check_capture_tools, detect_backend};
 use crate::config::Config;
-use crate::ocr::{check_tools as check_ocr_tools, create_engine};
+use crate::ocr::{check_tools as check_ocr_tools, clean_ocr_output, create_engine};
 
 use super::protocol::{Request, Response};
 use super::IpcError;
@@ -266,28 +266,6 @@ async fn handle_grab(_search: bool, ai: Option<String>) -> Response {
         }
     }
 }
-
-fn clean_ocr_output(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let mut result: Vec<&str> = Vec::new();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let is_blank = lines[i].trim().is_empty();
-
-        if is_blank {
-            while i < lines.len() && lines[i].trim().is_empty() {
-                i += 1;
-            }
-        } else {
-            result.push(lines[i]);
-            i += 1;
-        }
-    }
-
-    result.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

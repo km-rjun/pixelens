@@ -231,7 +231,6 @@ pub fn run_check() -> CheckResult {
     result.push(check_tool("pixelensd"));
     result.push(check_tool("grim"));
     result.push(check_tool("slurp"));
-    result.push(check_tool("pixelensd"));
     result.push(check_tool("wl-copy"));
     result.push(check_tool("xdg-open"));
 

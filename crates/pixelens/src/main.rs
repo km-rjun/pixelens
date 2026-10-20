@@ -151,7 +151,16 @@ async fn cmd_grab() -> i32 {
         Err(code) => return code,
     };
 
-    let choice = match pixelens_core::menu::action_bar::show_action_bar() {
+    let config = Config::load();
+    let backend = match pixelens_core::menu::create_backend(&config.menu_backend) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Menu error: {}", e);
+            return 1;
+        }
+    };
+
+    let choice = match backend.show_menu(&text) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Menu error: {}", e);

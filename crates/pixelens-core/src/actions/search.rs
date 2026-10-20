@@ -54,7 +54,7 @@ impl<L: UrlLauncher> ActionHandler for SearchHandler<L> {
         self.launcher
             .open(&url)
             .map_err(|e| PixelensError::Config(format!("{}\nURL: {}", e, url)))?;
-        Ok(String::new())
+        Ok(url)
     }
 
     fn action_type(&self) -> ActionType {
