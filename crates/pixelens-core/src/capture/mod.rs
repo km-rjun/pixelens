@@ -16,8 +16,10 @@ pub fn detect_backend() -> Result<Box<dyn ScreenCapture>, CaptureError> {
         return Ok(Box::new(wayland));
     }
 
+    let x11_enabled = std::env::var("PIXELENS_ENABLE_X11").ok().as_deref() == Some("1");
+
     let x11 = x11::X11Capture;
-    if x11.is_available() {
+    if x11_enabled && x11.is_available() {
         return Ok(Box::new(x11));
     }
 
@@ -30,7 +32,8 @@ pub fn check_tools() -> Vec<String> {
     let mut missing = Vec::new();
 
     let wayland_available = tool_exists("slurp") && tool_exists("grim");
-    let x11_available = tool_exists("slop") && tool_exists("scrot");
+    let x11_enabled = std::env::var("PIXELENS_ENABLE_X11").ok().as_deref() == Some("1");
+    let x11_available = x11_enabled && tool_exists("slop") && tool_exists("scrot");
 
     if !wayland_available && !x11_available {
         if !tool_exists("slurp") {
