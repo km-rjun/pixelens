@@ -94,6 +94,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_default_config() {
@@ -131,6 +134,7 @@ mod tests {
 
     #[test]
     fn test_env_override_model() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("PIXELENS_MODEL", "env-model");
         let mut config = Config::default();
         if let Ok(val) = std::env::var("PIXELENS_MODEL") {
@@ -142,6 +146,7 @@ mod tests {
 
     #[test]
     fn test_env_does_not_override_unset() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("PIXELENS_MODEL");
         let mut config = Config {
             model: "file-model".to_string(),
