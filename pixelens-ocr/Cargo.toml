@@ -1,0 +1,16 @@
+[package]
+name = "pixelens-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OCR engine abstraction and Tesseract implementation"
+
+[dependencies]
+pixelens-core = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tempfile = "3.8"
+bmp = "0.5"

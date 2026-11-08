@@ -1,9 +1,39 @@
-*~
-Cargo.lock
-.DS_Store
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock.bak
+
+# Environment
 .env
-.env.*
-/.internal/
-*.swo
+**/.env*
+
+# IDEs and editors
+.idea/
+.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+release/
+
+# Packaging build outputs (populated by packaging/build-deb.sh)
+packaging/deb/usr/bin/
+target/debian/
+
+# OS noise
+*~
 *.swp
-/target
+*.swo
+
+# Coverage / profiling
+*.profraw
+*.gcda
+*.gcno
+lcov.info
+coverage/
+
+# Local config overrides
+.env.local
+*.local.toml

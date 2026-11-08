@@ -1,0 +1,42 @@
+.TH PIXELENS 1 "2026-07-20" "pixelens 0.1.0" "User Commands"
+.SH NAME
+pixelens \- Linux-native visual text extraction utility
+.SH SYNOPSIS
+.B pixelens
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B pixelens
+captures a screen region, runs OCR, and copies the extracted text to the
+clipboard. It talks to the
+.B pixelensd
+background daemon over IPC.
+.SH COMMANDS
+.TP
+.B grab
+Capture a region and copy OCR text to the clipboard (default action).
+.TP
+.B copy
+Copy the last captured text.
+.TP
+.B search
+Open a reverse/web image search for the last capture.
+.TP
+.B ai
+Run an AI prompt against the last capture.
+.TP
+.B translate
+Translate the last captured text.
+.TP
+.B daemon
+Control the background daemon (start|status|stop).
+.TP
+.B config
+Inspect or set configuration (--endpoint|--model|--language|--hotkey).
+.SH FILES
+.TP
+.I ~/.config/pixelens/config.toml
+User configuration (TOML).
+.SH SEE ALSO
+.BR pixelensd (1)
+.SH AUTHOR
+km-rjun

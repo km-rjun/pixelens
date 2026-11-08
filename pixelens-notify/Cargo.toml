@@ -1,0 +1,17 @@
+[package]
+name = "pixelens-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Notification abstraction (libnotify / xdg-desktop-portal)"
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winrt-notification = "0.5"
+arboard = "3"

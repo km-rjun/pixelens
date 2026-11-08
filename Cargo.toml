@@ -1,32 +1,67 @@
 [workspace]
-members = [
-    "crates/pixelens",
-    "crates/pixelensd",
-    "crates/pixelens-core",
-]
 resolver = "2"
+members = [
+    "pixelens-core",
+    "pixelens-ipc",
+    "pixelens-config",
+    "pixelens-ocr",
+    "pixelens-capture",
+    "pixelens-portal",
+    "pixelens-overlay",
+    "pixelens-notify",
+    "pixelens-daemon",
+    "pixelens-cli",
+    "pixelens-keyhook",
+    "pixelens-ai",
+    "pixelens-search",
+    "pixelens-menu",
+]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.5"
 edition = "2021"
-rust-version = "1.77.2"
-authors = ["km-rjun"]
+rust-version = "1.75"
 license = "MIT"
 repository = "https://github.com/km-rjun/pixelens"
+authors = ["km-rjun"]
+description = "Linux-native visual text extraction utility"
 
 [workspace.dependencies]
-pixelens-core = { path = "crates/pixelens-core" }
+# Shared internal crates
+pixelens-core = { path = "pixelens-core" }
+pixelens-ipc = { path = "pixelens-ipc" }
+pixelens-config = { path = "pixelens-config" }
+pixelens-ocr = { path = "pixelens-ocr" }
+pixelens-capture = { path = "pixelens-capture" }
+pixelens-overlay = { path = "pixelens-overlay" }
+pixelens-notify = { path = "pixelens-notify" }
+pixelens-portal = { path = "pixelens-portal" }
+pixelens-keyhook = { path = "pixelens-keyhook" }
+pixelens-ai = { path = "pixelens-ai" }
+pixelens-search = { path = "pixelens-search" }
+pixelens-menu = { path = "pixelens-menu" }
 
+# External dependencies pinned at workspace level
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "2"
-log = "0.4"
-env_logger = "0.11"
-dirs = "6.0"
-ureq = { version = "3", features = ["json"] }
+thiserror = "1.0"
+anyhow = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 base64 = "0.22"
+fastrand = "2.1"
 urlencoding = "2.1"
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-fastrand = "2"
-gtk-layer-shell = "0.8"
+dirs = "5.0"
+hyper = { version = "1.0", default-features = false, features = ["full", "http1", "http2"] }
+ureq = { version = "3.0", features = ["json"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

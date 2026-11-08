@@ -1,0 +1,15 @@
+[Unit]
+Description=Pixelens background daemon (capture, OCR, AI, action menu)
+Documentation=https://github.com/km-rjun/pixelens
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pixelensd
+Restart=on-failure
+RestartSec=2
+# No display required; the daemon shells out to slurp/grim at capture time.
+Environment=PIXELENS_HOME=%h/.config/pixelens
+
+[Install]
+WantedBy=graphical-session.target

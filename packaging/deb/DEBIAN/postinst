@@ -1,0 +1,13 @@
+#!/bin/sh
+# postinst — install-time hook.
+# The pixelensd user service unit is shipped but NOT enabled automatically,
+# respecting the config default `general.autostart = false`. The user opts
+# in explicitly with: systemctl --user enable --now pixelensd.service
+set -e
+if [ "$1" = "configure" ]; then
+    # Reload systemd user manager so the newly installed unit is visible.
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+    fi
+fi
+exit 0

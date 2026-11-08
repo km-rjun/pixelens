@@ -1,0 +1,16 @@
+Package: pixelens
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libc6, slurp, grim, tesseract-ocr, xdg-utils
+Recommends: fuzzel | wofi
+Suggests: xdg-desktop-portal, libgtk-3-0
+Maintainer: km-rjun <km-rjun@users.noreply.github.com>
+Homepage: https://github.com/km-rjun/pixelens
+Description: Linux-native visual text extraction utility
+ Press a hotkey, select a screen region, and Pixelens extracts the text
+ (OCR) and copies it to the clipboard. A background daemon (pixelensd)
+ handles capture, OCR, AI, and action-menu dispatch. Ships CLI (pixelens)
+ and daemon (pixelensd). No display-server integration is bundled; the
+ default capture path uses slurp/grim.
