@@ -1,0 +1,11 @@
+[package]
+name = "pixelens-gui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Experimental native Wayland GUI spike for Pixelens"
+
+[dependencies]
+smithay-client-toolkit = "0.19"
+wayland-client = "0.31"

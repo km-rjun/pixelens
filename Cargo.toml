@@ -15,6 +15,7 @@ members = [
     "pixelens-ai",
     "pixelens-search",
     "pixelens-menu",
+    "pixelens-gui",
 ]
 
 [workspace.package]
