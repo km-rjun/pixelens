@@ -27,6 +27,7 @@ Build a Linux-native visual search and OCR utility that lets users select screen
 
 ## Later / Exploratory
 
+- [ ] GUI planning and prototype design (native Rust, Wayland-first)
 - [ ] Optional provider integrations (SerpAPI, Google Vision, Imgur)
 - [ ] X11 backend (grim/slurp alternative)
 - [ ] System tray integration
