@@ -2103,6 +2103,7 @@ dependencies = [
 name = "pixelens-gui"
 version = "0.1.5"
 dependencies = [
+ "pixelens-config",
  "smithay-client-toolkit",
  "wayland-client",
 ]

@@ -17,6 +17,7 @@ use smithay_client_toolkit::{
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
 use std::f64::consts::PI;
+use pixelens_config::load_config;
 use wayland_client::{
     globals::registry_queue_init,
     protocol::{wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
@@ -33,6 +34,14 @@ struct Cursor {
     y: f64,
 }
 
+const PALETTE: [(u8,u8,u8); 5] = [
+    (0x35, 0x84, 0xe4),
+    (0x33, 0xd1, 0x7a),
+    (0xf6, 0xd3, 0x2d),
+    (0xf6, 0x61, 0x51),
+    (0x91, 0x41, 0xac),
+];
+
 struct Spike {
     registry_state: RegistryState,
     seat_state: SeatState,
@@ -45,6 +54,7 @@ struct Spike {
     layer: LayerSurface,
     pointer: Option<wl_pointer::WlPointer>,
     cursor: Option<Cursor>,
+    sectors: Vec<String>,
     last_activity: std::time::Instant,
     exit: bool,
 }
@@ -63,10 +73,11 @@ impl Spike {
         if angle < 0.0 {
             angle += 2.0 * PI;
         }
-        let sector_size = (2.0 * PI) / SECTOR_COUNT as f64;
+        let count = self.sectors.len().max(1);
+        let sector_size = (2.0 * PI) / count as f64;
         let mut index = (angle / sector_size).floor() as usize;
-        if index >= SECTOR_COUNT {
-            index = SECTOR_COUNT - 1;
+        if index >= count {
+            index = count - 1;
         }
         Some(index)
     }
@@ -167,7 +178,13 @@ impl PointerHandler for Spike {
                                 self.exit = true;
                             }
                             Some(index) => {
-                                println!("SELECTED SECTOR {}", index);
+                                let tag = self
+                                    .sectors
+                                    .get(index)
+                                    .cloned()
+                                    .unwrap_or_else(|| "grab".to_string());
+                                println!("SELECTED SECTOR {} ({})", index, tag);
+                                let _ = std::process::Command::new("pixelens").arg(&tag).spawn();
                                 self.exit = true;
                             }
                         }
@@ -214,8 +231,33 @@ impl Spike {
                     wl_shm::Format::Argb8888,
                 )
                 .unwrap();
-            for b in canvas.iter_mut() {
-                *b = 0;
+            let cx = self.width as f64 / 2.0;
+            let cy = self.height as f64 / 2.0;
+            let count = self.sectors.len().max(1);
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let idx = ((y * self.width + x) * 4) as usize;
+                    let dx = x as f64 - cx;
+                    let dy = y as f64 - cy;
+                    let distance = dx.hypot(dy);
+                    if distance <= CENTER_CANCEL_RADIUS {
+                        canvas[idx] = 0;
+                        canvas[idx + 1] = 0;
+                        canvas[idx + 2] = 0;
+                        canvas[idx + 3] = 0;
+                        continue;
+                    }
+                    let mut angle = dy.atan2(dx);
+                    if angle < 0.0 {
+                        angle += 2.0 * PI;
+                    }
+                    let sector = ((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1);
+                    let (r, g, b) = PALETTE[sector % PALETTE.len()];
+                    canvas[idx] = b;
+                    canvas[idx + 1] = g;
+                    canvas[idx + 2] = r;
+                    canvas[idx + 3] = 0x88;
+                }
             }
             self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
             self.surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
@@ -241,6 +283,9 @@ fn main() {
     layer.set_size(0, 0);
     WaylandSurface::commit(&layer);
 
+    let config = load_config().unwrap_or_default();
+    let sectors = if config.gui.sectors.is_empty() { vec!["copy".into(), "search".into(), "ai".into(), "translate".into(), "image".into()] } else { config.gui.sectors };
+
     let mut spike = Spike {
         registry_state: RegistryState::new(&globals),
         seat_state: SeatState::new(&globals, &qh),
@@ -253,6 +298,7 @@ fn main() {
         layer,
         pointer: None,
         cursor: None,
+        sectors,
         last_activity: std::time::Instant::now(),
         exit: false,
     };

@@ -180,6 +180,9 @@ pub struct GuiConfig {
     /// Auto-dismiss timeout for the HUD in milliseconds.
     #[serde(default = "default_hud_timeout_ms")]
     pub hud_timeout_ms: u64,
+    /// Pie-menu sectors as tag strings, in clockwise order.
+    #[serde(default = "default_gui_sectors")]
+    pub sectors: Vec<String>,
 }
 
 impl Default for GuiConfig {
@@ -187,6 +190,7 @@ impl Default for GuiConfig {
         Self {
             hud_enabled: default_hud_enabled(),
             hud_timeout_ms: default_hud_timeout_ms(),
+            sectors: default_gui_sectors(),
         }
     }
 }
@@ -241,4 +245,13 @@ fn default_hud_enabled() -> bool {
 }
 fn default_hud_timeout_ms() -> u64 {
     1500
+}
+fn default_gui_sectors() -> Vec<String> {
+    vec![
+        "copy".to_string(),
+        "search".to_string(),
+        "ai".to_string(),
+        "translate".to_string(),
+        "image".to_string(),
+    ]
 }

@@ -7,5 +7,6 @@ license.workspace = true
 description = "Experimental native Wayland GUI spike for Pixelens"
 
 [dependencies]
+pixelens-config = { path = "../pixelens-config" }
 smithay-client-toolkit = "0.19"
 wayland-client = "0.31"
