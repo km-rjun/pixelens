@@ -13,14 +13,25 @@ use smithay_client_toolkit::{
         Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
         LayerSurfaceConfigure,
     },
+    shell::WaylandSurface,
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use smithay_client_toolkit::shell::WaylandSurface;
+use std::f64::consts::PI;
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
     Connection, QueueHandle,
 };
+
+const SECTOR_COUNT: usize = 5;
+const CENTER_CANCEL_RADIUS: f64 = 48.0;
+const INACTIVE_TIMEOUT_SECS: u64 = 2;
+
+#[derive(Clone, Copy)]
+struct Cursor {
+    x: f64,
+    y: f64,
+}
 
 struct Spike {
     registry_state: RegistryState,
@@ -30,81 +41,55 @@ struct Spike {
     pool: Option<SlotPool>,
     width: u32,
     height: u32,
-    surface: wayland_client::protocol::wl_surface::WlSurface,
+    surface: wl_surface::WlSurface,
     layer: LayerSurface,
     pointer: Option<wl_pointer::WlPointer>,
+    cursor: Option<Cursor>,
+    last_activity: std::time::Instant,
     exit: bool,
 }
 
-impl smithay_client_toolkit::registry::ProvidesRegistryState for Spike {
-    fn registry(&mut self) -> &mut RegistryState {
-        &mut self.registry_state
+impl Spike {
+    fn sector_for(&self, x: f64, y: f64) -> Option<usize> {
+        let cx = self.width as f64 / 2.0;
+        let cy = self.height as f64 / 2.0;
+        let dx = x - cx;
+        let dy = y - cy;
+        let distance = dx.hypot(dy);
+        if distance <= CENTER_CANCEL_RADIUS {
+            return None;
+        }
+        let mut angle = dy.atan2(dx);
+        if angle < 0.0 {
+            angle += 2.0 * PI;
+        }
+        let sector_size = (2.0 * PI) / SECTOR_COUNT as f64;
+        let mut index = (angle / sector_size).floor() as usize;
+        if index >= SECTOR_COUNT {
+            index = SECTOR_COUNT - 1;
+        }
+        Some(index)
     }
-    registry_handlers![OutputState, SeatState];
 }
 
+// Trait wiring.
 impl CompositorHandler for Spike {
-    fn scale_factor_changed(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _new_factor: i32,
-    ) {}
-    fn transform_changed(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _new_transform: wl_output::Transform,
-    ) {}
-    fn frame(
-        &mut self,
-        _conn: &Connection,
-        qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _time: u32,
-    ) {
+    fn scale_factor_changed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _surface: &wl_surface::WlSurface, _new_factor: i32) {}
+    fn transform_changed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _surface: &wl_surface::WlSurface, _new_transform: wl_output::Transform) {}
+    fn frame(&mut self, _conn: &Connection, qh: &QueueHandle<Self>, _surface: &wl_surface::WlSurface, _time: u32) {
         self.draw(qh);
     }
-    fn surface_enter(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _output: &wl_output::WlOutput,
-    ) {}
-    fn surface_leave(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
-        _output: &wl_output::WlOutput,
-    ) {}
+    fn surface_enter(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _surface: &wl_surface::WlSurface, _output: &wl_output::WlOutput) {}
+    fn surface_leave(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _surface: &wl_surface::WlSurface, _output: &wl_output::WlOutput) {}
 }
 
 impl OutputHandler for Spike {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.output_state
     }
-    fn new_output(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
-    ) {}
-    fn update_output(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
-    ) {}
-    fn output_destroyed(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
-    ) {}
+    fn new_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
+    fn update_output(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
+    fn output_destroyed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _output: wl_output::WlOutput) {}
 }
 
 impl LayerShellHandler for Spike {
@@ -126,10 +111,11 @@ impl LayerShellHandler for Spike {
             self.width = configure.new_size.0;
             self.height = configure.new_size.1;
         }
-        println!("overlay configured: {}x{}", self.width, self.height);
+        println!("overlay configured: {}x{} (center cancel radius {})", self.width, self.height, CENTER_CANCEL_RADIUS);
         if self.pool.is_none() {
             self.pool = Some(SlotPool::new((self.width * self.height * 4) as usize, &self.shm).unwrap());
         }
+        self.last_activity = std::time::Instant::now();
         self.draw(qh);
     }
 }
@@ -150,13 +136,7 @@ impl SeatHandler for Spike {
             self.pointer = Some(self.seat_state.get_pointer(qh, &seat).unwrap());
         }
     }
-    fn remove_capability(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wl_seat::WlSeat,
-        capability: Capability,
-    ) {
+    fn remove_capability(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _seat: wl_seat::WlSeat, capability: Capability) {
         if capability == Capability::Pointer {
             self.pointer = None;
         }
@@ -173,11 +153,27 @@ impl PointerHandler for Spike {
         events: &[PointerEvent],
     ) {
         for ev in events {
-            if let PointerEventKind::Motion { .. } = ev.kind {
-                println!("CURSOR: {:.1}, {:.1} (output: {}x{})", ev.position.0, ev.position.1, self.width, self.height);
-            }
-            if let PointerEventKind::Press { .. } = ev.kind {
-                println!("POINTER PRESS at {:?}", ev.position);
+            match ev.kind {
+                PointerEventKind::Motion { .. } => {
+                    self.cursor = Some(Cursor { x: ev.position.0, y: ev.position.1 });
+                    self.last_activity = std::time::Instant::now();
+                }
+                PointerEventKind::Press { .. } => {
+                    self.last_activity = std::time::Instant::now();
+                    if let Some(cursor) = self.cursor {
+                        match self.sector_for(cursor.x, cursor.y) {
+                            None => {
+                                println!("CANCEL (center)");
+                                self.exit = true;
+                            }
+                            Some(index) => {
+                                println!("SELECTED SECTOR {}", index);
+                                self.exit = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -187,6 +183,13 @@ impl ShmHandler for Spike {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
     }
+}
+
+impl smithay_client_toolkit::registry::ProvidesRegistryState for Spike {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+    registry_handlers![OutputState, SeatState];
 }
 
 delegate_compositor!(Spike);
@@ -200,16 +203,22 @@ delegate_shm!(Spike);
 impl Spike {
     fn draw(&mut self, _qh: &QueueHandle<Self>) {
         if let Some(pool) = &mut self.pool {
-            let (buffer, canvas) = pool.create_buffer(
-                self.width as i32,
-                self.height as i32,
-                (self.width * 4) as i32,
-                wl_shm::Format::Argb8888,
-            ).unwrap();
+            if self.width == 0 || self.height == 0 {
+                return;
+            }
+            let (buffer, canvas) = pool
+                .create_buffer(
+                    self.width as i32,
+                    self.height as i32,
+                    (self.width * 4) as i32,
+                    wl_shm::Format::Argb8888,
+                )
+                .unwrap();
             for b in canvas.iter_mut() {
                 *b = 0;
             }
             self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+            self.surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
             self.surface.commit();
         }
     }
@@ -230,7 +239,7 @@ fn main() {
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
     layer.set_exclusive_zone(-1);
     layer.set_size(0, 0);
-    layer.commit();
+    WaylandSurface::commit(&layer);
 
     let mut spike = Spike {
         registry_state: RegistryState::new(&globals),
@@ -243,12 +252,19 @@ fn main() {
         surface,
         layer,
         pointer: None,
+        cursor: None,
+        last_activity: std::time::Instant::now(),
         exit: false,
     };
 
-    let timeout = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let timeout = std::time::Instant::now() + std::time::Duration::from_secs(INACTIVE_TIMEOUT_SECS as u64 + 2);
     while !spike.exit && std::time::Instant::now() < timeout {
+        if spike.last_activity.elapsed().as_secs_f64() > INACTIVE_TIMEOUT_SECS as f64 {
+            println!("TIMEOUT (no activity)");
+            break;
+        }
         event_queue.blocking_dispatch(&mut spike).unwrap();
     }
     println!("spike finished");
 }
+
