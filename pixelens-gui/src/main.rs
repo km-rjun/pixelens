@@ -55,6 +55,7 @@ struct Spike {
     pointer: Option<wl_pointer::WlPointer>,
     cursor: Option<Cursor>,
     anchor: Option<Cursor>,
+    opened_at: std::time::Instant,
     sectors: Vec<String>,
     last_activity: std::time::Instant,
     exit: bool,
@@ -222,81 +223,82 @@ delegate_registry!(Spike);
 delegate_shm!(Spike);
 
 impl Spike {
-    fn draw(&mut self, _qh: &QueueHandle<Self>) {
-        if let Some(pool) = &mut self.pool {
-            if self.width == 0 || self.height == 0 {
-                return;
-            }
-            let (buffer, canvas) = pool
-                .create_buffer(
-                    self.width as i32,
-                    self.height as i32,
-                    (self.width * 4) as i32,
-                    wl_shm::Format::Argb8888,
-                )
-                .unwrap();
-            let center = self.anchor.or(self.cursor).unwrap_or(Cursor {
-                x: self.width as f64 / 2.0,
-                y: self.height as f64 / 2.0,
-            });
-            let count = self.sectors.len().max(1);
-            let radius = 120.0;
-            let hover_sector = match (self.anchor, self.cursor) {
-                (Some(anchor), Some(cursor)) => {
-                    let dx = cursor.x - anchor.x;
-                    let dy = cursor.y - anchor.y;
-                    let dist = dx.hypot(dy);
-                    if dist <= CENTER_CANCEL_RADIUS {
-                        None
-                    } else {
+    fn draw(&mut self, qh: &QueueHandle<Self>) {
+            if let Some(pool) = &mut self.pool {
+                if self.width == 0 || self.height == 0 {
+                    return;
+                }
+                let (buffer, canvas) = pool
+                    .create_buffer(
+                        self.width as i32,
+                        self.height as i32,
+                        (self.width * 4) as i32,
+                        wl_shm::Format::Argb8888,
+                    )
+                    .unwrap();
+                let center = self.anchor.or(self.cursor).unwrap_or(Cursor {
+                    x: self.width as f64 / 2.0,
+                    y: self.height as f64 / 2.0,
+                });
+                let count = self.sectors.len().max(1);
+                let radius = 120.0;
+                let hover_sector = match (self.anchor, self.cursor) {
+                    (Some(anchor), Some(cursor)) => {
+                        let dx = cursor.x - anchor.x;
+                        let dy = cursor.y - anchor.y;
+                        let dist = dx.hypot(dy);
+                        if dist <= CENTER_CANCEL_RADIUS {
+                            None
+                        } else {
+                            let mut angle = dy.atan2(dx);
+                            if angle < 0.0 {
+                                angle += 2.0 * PI;
+                            }
+                            Some(((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1))
+                        }
+                    }
+                    _ => None,
+                };
+                let intro = (self.opened_at.elapsed().as_secs_f64() / 0.12).clamp(0.0, 1.0);
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        let idx = ((y * self.width + x) * 4) as usize;
+                        let dx = x as f64 - center.x;
+                        let dy = y as f64 - center.y;
+                        let distance = dx.hypot(dy);
+                        if distance > radius {
+                            canvas[idx] = 0;
+                            canvas[idx + 1] = 0;
+                            canvas[idx + 2] = 0;
+                            canvas[idx + 3] = 0;
+                            continue;
+                        }
+                        if distance <= CENTER_CANCEL_RADIUS {
+                            let v = (0x28 as f64 * intro) as u8;
+                            canvas[idx] = v;
+                            canvas[idx + 1] = v;
+                            canvas[idx + 2] = v;
+                            canvas[idx + 3] = (0x80 as f64 * intro) as u8;
+                            continue;
+                        }
                         let mut angle = dy.atan2(dx);
                         if angle < 0.0 {
                             angle += 2.0 * PI;
                         }
-                        Some(((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1))
+                        let sector = ((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1);
+                        let (r, g, b) = PALETTE[sector % PALETTE.len()];
+                        let alpha = if Some(sector) == hover_sector { 0xdd } else { 0x70 };
+                        canvas[idx] = b;
+                        canvas[idx + 1] = g;
+                        canvas[idx + 2] = r;
+                        canvas[idx + 3] = ((alpha as f64) * intro) as u8;
                     }
                 }
-                _ => None,
-            };
-            let intro = (self.last_activity.elapsed().as_secs_f64() / 0.12).clamp(0.0, 1.0);
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    let idx = ((y * self.width + x) * 4) as usize;
-                    let dx = x as f64 - center.x;
-                    let dy = y as f64 - center.y;
-                    let distance = dx.hypot(dy);
-                    if distance > radius {
-                        canvas[idx] = 0;
-                        canvas[idx + 1] = 0;
-                        canvas[idx + 2] = 0;
-                        canvas[idx + 3] = 0;
-                        continue;
-                    }
-                    if distance <= CENTER_CANCEL_RADIUS {
-                        canvas[idx] = 0x10;
-                        canvas[idx + 1] = 0x10;
-                        canvas[idx + 2] = 0x10;
-                        canvas[idx + 3] = (0x60 as f64 * intro) as u8;
-                        continue;
-                    }
-                    let mut angle = dy.atan2(dx);
-                    if angle < 0.0 {
-                        angle += 2.0 * PI;
-                    }
-                    let sector = ((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1);
-                    let (r, g, b) = PALETTE[sector % PALETTE.len()];
-                    let alpha = if Some(sector) == hover_sector { 0xb8 } else { 0x66 };
-                    canvas[idx] = b;
-                    canvas[idx + 1] = g;
-                    canvas[idx + 2] = r;
-                    canvas[idx + 3] = ((alpha as f64) * intro) as u8;
-                }
+                self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
+                self.surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
+                self.surface.commit();
             }
-            self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
-            self.surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
-            self.surface.commit();
         }
-    }
 }
 
 fn main() {
@@ -333,6 +335,7 @@ fn main() {
         cursor: None,
         anchor: None,
         sectors,
+        opened_at: std::time::Instant::now(),
         last_activity: std::time::Instant::now(),
         exit: false,
     };
