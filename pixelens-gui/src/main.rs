@@ -54,17 +54,16 @@ struct Spike {
     layer: LayerSurface,
     pointer: Option<wl_pointer::WlPointer>,
     cursor: Option<Cursor>,
+    anchor: Option<Cursor>,
     sectors: Vec<String>,
     last_activity: std::time::Instant,
     exit: bool,
 }
 
 impl Spike {
-    fn sector_for(&self, x: f64, y: f64) -> Option<usize> {
-        let cx = self.width as f64 / 2.0;
-        let cy = self.height as f64 / 2.0;
-        let dx = x - cx;
-        let dy = y - cy;
+    fn sector_for(&self, anchor: Cursor, point: Cursor) -> Option<usize> {
+        let dx = point.x - anchor.x;
+        let dy = point.y - anchor.y;
         let distance = dx.hypot(dy);
         if distance <= CENTER_CANCEL_RADIUS {
             return None;
@@ -166,13 +165,18 @@ impl PointerHandler for Spike {
         for ev in events {
             match ev.kind {
                 PointerEventKind::Motion { .. } => {
-                    self.cursor = Some(Cursor { x: ev.position.0, y: ev.position.1 });
+                    let cursor = Cursor { x: ev.position.0, y: ev.position.1 };
+                    if self.anchor.is_none() {
+                        self.anchor = Some(cursor);
+                    }
+                    self.cursor = Some(cursor);
                     self.last_activity = std::time::Instant::now();
                 }
                 PointerEventKind::Press { .. } => {
                     self.last_activity = std::time::Instant::now();
-                    if let Some(cursor) = self.cursor {
-                        match self.sector_for(cursor.x, cursor.y) {
+                    let anchor = self.anchor.or(self.cursor);
+                    if let (Some(anchor), Some(cursor)) = (anchor, self.cursor) {
+                        match self.sector_for(anchor, cursor) {
                             None => {
                                 println!("CANCEL (center)");
                                 self.exit = true;
@@ -231,20 +235,48 @@ impl Spike {
                     wl_shm::Format::Argb8888,
                 )
                 .unwrap();
-            let cx = self.width as f64 / 2.0;
-            let cy = self.height as f64 / 2.0;
+            let center = self.anchor.or(self.cursor).unwrap_or(Cursor {
+                x: self.width as f64 / 2.0,
+                y: self.height as f64 / 2.0,
+            });
             let count = self.sectors.len().max(1);
+            let radius = 120.0;
+            let hover_sector = match (self.anchor, self.cursor) {
+                (Some(anchor), Some(cursor)) => {
+                    let dx = cursor.x - anchor.x;
+                    let dy = cursor.y - anchor.y;
+                    let dist = dx.hypot(dy);
+                    if dist <= CENTER_CANCEL_RADIUS {
+                        None
+                    } else {
+                        let mut angle = dy.atan2(dx);
+                        if angle < 0.0 {
+                            angle += 2.0 * PI;
+                        }
+                        Some(((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1))
+                    }
+                }
+                _ => None,
+            };
+            let intro = (self.last_activity.elapsed().as_secs_f64() / 0.12).clamp(0.0, 1.0);
             for y in 0..self.height {
                 for x in 0..self.width {
                     let idx = ((y * self.width + x) * 4) as usize;
-                    let dx = x as f64 - cx;
-                    let dy = y as f64 - cy;
+                    let dx = x as f64 - center.x;
+                    let dy = y as f64 - center.y;
                     let distance = dx.hypot(dy);
-                    if distance <= CENTER_CANCEL_RADIUS {
+                    if distance > radius {
                         canvas[idx] = 0;
                         canvas[idx + 1] = 0;
                         canvas[idx + 2] = 0;
                         canvas[idx + 3] = 0;
+                        continue;
+                    }
+                    if distance <= CENTER_CANCEL_RADIUS {
+                        canvas[idx] = 0x10;
+                        canvas[idx + 1] = 0x10;
+                        canvas[idx + 2] = 0x10;
+                        canvas[idx + 3] = (0x60 as f64 * intro) as u8;
                         continue;
                     }
                     let mut angle = dy.atan2(dx);
@@ -253,10 +285,11 @@ impl Spike {
                     }
                     let sector = ((angle / (2.0 * PI / count as f64)).floor() as usize).min(count - 1);
                     let (r, g, b) = PALETTE[sector % PALETTE.len()];
+                    let alpha = if Some(sector) == hover_sector { 0xb8 } else { 0x66 };
                     canvas[idx] = b;
                     canvas[idx + 1] = g;
                     canvas[idx + 2] = r;
-                    canvas[idx + 3] = 0x88;
+                    canvas[idx + 3] = ((alpha as f64) * intro) as u8;
                 }
             }
             self.surface.attach(Some(buffer.wl_buffer()), 0, 0);
@@ -298,6 +331,7 @@ fn main() {
         layer,
         pointer: None,
         cursor: None,
+        anchor: None,
         sectors,
         last_activity: std::time::Instant::now(),
         exit: false,
